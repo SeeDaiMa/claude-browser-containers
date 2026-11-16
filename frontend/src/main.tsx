@@ -6,6 +6,7 @@ import './app/styles/tokens.css'
 import './app/styles/components.css'
 import './app/styles/app.css'
 import './app/styles/sidebar.css'
+import './app/styles/pages.css'
 
 createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

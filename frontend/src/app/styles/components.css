@@ -1028,21 +1028,123 @@ body {
 }
 
 /* ---------- 节点选择列表 ---------- */
-.cm-nodes {
+.node-picker {
     display: grid;
-    max-height: 300px;
-    overflow: auto;
+    min-width: 0;
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);
     background: var(--surface);
+    overflow: hidden;
+}
+
+.node-picker__bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    align-items: center;
+    padding: var(--space-3);
+    border-bottom: 1px solid var(--border);
+    background: var(--surface-2);
+}
+
+.node-picker__search {
+    position: relative;
+    display: flex;
+    flex: 1 1 200px;
+    align-items: center;
+    min-width: 0;
+}
+
+.node-picker__search > .cm-icon {
+    position: absolute;
+    left: 10px;
+    width: 15px;
+    height: 15px;
+    color: var(--ink-muted);
+    pointer-events: none;
+}
+
+.node-picker__search .cm-input {
+    width: 100%;
+    padding-left: 32px;
+}
+
+.node-picker__sort {
+    flex: none;
+}
+
+.node-picker__sort button {
+    height: 26px;
+    padding: 0 10px;
+    font-size: 12.5px;
+}
+
+.node-picker__toggle {
+    display: inline-flex;
+    flex: none;
+    gap: 6px;
+    align-items: center;
+    padding: 0 4px;
+    color: var(--text);
+    font-size: 13px;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.node-picker__toggle input {
+    width: 15px;
+    height: 15px;
+    margin: 0;
+    accent-color: var(--primary);
+}
+
+.node-picker__summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px var(--space-3) 6px var(--space-4);
+    border-bottom: 1px solid var(--border);
+}
+
+.node-picker__summary .cm-help {
+    margin: 0;
+    font-variant-numeric: tabular-nums;
+    cursor: help;
+}
+
+.node-picker__summary .cm-actions {
+    gap: 2px;
+}
+
+.node-picker__empty {
+    margin: 0;
+    padding: var(--space-8) var(--space-4);
+    color: var(--ink-muted);
+    font-size: 13px;
+    text-align: center;
+}
+
+.node-picker .loading-state {
+    min-height: 160px;
+}
+
+/* 用块级布局：grid 容器限高时会压缩行高，导致换行后的行互相重叠。 */
+.cm-nodes {
+    display: block;
+    max-height: min(480px, 56vh);
+    overflow: auto;
+    overscroll-behavior: contain;
 }
 
 .cm-node {
     display: grid;
-    grid-template-columns: 20px minmax(0, 1fr) auto;
+    grid-template-columns: 16px minmax(0, 1fr) auto;
     gap: var(--space-3);
     align-items: center;
-    padding: 11px var(--space-4);
+    min-height: 48px;
+    padding: 6px var(--space-3) 6px var(--space-4);
     border-bottom: 1px solid var(--border);
     cursor: pointer;
 }
@@ -1057,6 +1159,7 @@ body {
 
 .cm-node.is-selected {
     background: var(--primary-soft);
+    box-shadow: inset 3px 0 0 var(--primary);
 }
 
 .cm-node.is-disabled {
@@ -1075,19 +1178,42 @@ body {
     accent-color: var(--primary);
 }
 
+/* 列表在滚动容器内，焦点框向内收，避免被裁掉。 */
+.cm-node:has(input:focus-visible) {
+    outline-offset: -2px;
+}
+
 .cm-node__main {
     display: grid;
     gap: 2px;
     min-width: 0;
+    cursor: inherit;
 }
 
 .cm-node__name {
     display: flex;
-    flex-wrap: wrap;
     gap: 6px;
     align-items: center;
+    min-width: 0;
     color: var(--ink);
+    font-size: 13.5px;
     font-weight: 500;
+}
+
+.cm-node__title {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.cm-node__name > .cm-badge,
+.cm-node__name > .cm-chip {
+    flex: none;
+}
+
+.cm-node.is-disabled .cm-node__name {
+    color: var(--ink-muted);
 }
 
 .cm-node__meta {
@@ -1096,39 +1222,26 @@ body {
     line-height: 18px;
 }
 
-.cm-node__main {
-    cursor: inherit;
-}
-
 .cm-node__actions {
-    display: grid;
-    grid-template-columns: max-content auto;
-    align-items: center;
-    gap: var(--space-2);
-}
-
-.node-test-tools {
-    justify-content: space-between;
-    align-items: center;
-}
-
-.node-test-tools .cm-actions {
+    display: flex;
     flex-wrap: wrap;
-    justify-content: flex-start;
+    gap: 6px;
+    align-items: center;
+    justify-content: flex-end;
+}
+
+.cm-node__actions .cm-icon-btn {
+    width: 28px;
+    height: 28px;
+}
+
+.cm-node__actions .cm-icon-btn .cm-icon {
+    width: 15px;
+    height: 15px;
 }
 
 .subscription-node-table {
     min-width: 1100px;
-}
-
-.node-selection-tools {
-    gap: var(--space-3);
-    flex-wrap: wrap;
-    padding: 0;
-}
-
-.node-selection-tools .cm-help {
-    margin: 0;
 }
 
 .subscription-node-table .node-select-cell {
@@ -1161,10 +1274,6 @@ body {
     white-space: nowrap;
 }
 
-.node-quality-help {
-    margin-top: -8px;
-}
-
 .node-row-actions {
     display: flex;
     flex-direction: column;
@@ -1174,9 +1283,34 @@ body {
 }
 
 @media (max-width: 700px) {
+    /* 窄屏时操作区独占一行，从行首开始排，给两个指标和两个按钮留够宽度。 */
     .cm-node > .cm-node__actions {
         grid-column: 1 / -1;
-        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 4px;
+        justify-content: flex-start;
+    }
+
+    .cm-node__actions .cm-icon-btn {
+        width: 26px;
+        height: 26px;
+    }
+
+    /* 颜色已经表达状态，窄屏去掉指标前的圆点以节省宽度。 */
+    .cm-node__actions .cm-badge {
+        padding-right: 7px;
+        padding-left: 7px;
+    }
+
+    .cm-node__actions .cm-badge > .cm-dot {
+        display: none;
+    }
+
+    .node-picker__sort {
+        flex: 1 1 auto;
+    }
+
+    .node-picker__sort button {
+        flex: 1;
     }
 }
 

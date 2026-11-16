@@ -94,6 +94,8 @@ export function SubscriptionsPage() {
   const [selectedNodeKeys, setSelectedNodeKeys] = useState<Set<string>>(() => new Set())
   const [nodeError, setNodeError] = useState('')
   const [nodeLoading, setNodeLoading] = useState(false)
+  // 首次读取完成前不能显示“没有匹配的节点”；之后后台刷新时保留旧表格，避免闪烁。
+  const [nodesFetched, setNodesFetched] = useState(false)
   const [nodeAction, setNodeAction] = useState<'test' | 'quality' | null>(null)
   const addTask = tasks.find((task) => task.id === addTaskId) || submittedTask
   const addingBusy = pending || !!(addTask && isActive(addTask))
@@ -155,7 +157,10 @@ export function SubscriptionsPage() {
         if (!cancelled) setNodeError(reason.message)
       })
       .finally(() => {
-        if (!cancelled) setNodeLoading(false)
+        if (!cancelled) {
+          setNodeLoading(false)
+          setNodesFetched(true)
+        }
       })
     return () => {
       cancelled = true
@@ -257,6 +262,7 @@ export function SubscriptionsPage() {
     selectedNodes.some((node) => isBusy(node.subscriptionId) || qualityBusy(node.subscriptionId))
   const testingSelected = selectedNodes.some((node) => !!activeTest(node.subscriptionId))
   const checkingSelected = selectedNodes.some((node) => qualityBusy(node.subscriptionId))
+  const showNodeLoading = !nodesFetched || (nodeLoading && !nodes.length)
 
   function toggleNode(node: LibraryNode, checked: boolean) {
     setSelectedNodeKeys((previous) => {
@@ -487,7 +493,7 @@ export function SubscriptionsPage() {
                             <Button
                               small
                               icon="edit"
-                              aria-label={`编辑订阅名称：${item.name}`}
+                              aria-label={`编辑订阅：${item.name}`}
                               disabled={busy}
                               onClick={() => {
                                 setRenaming(item)
@@ -496,7 +502,7 @@ export function SubscriptionsPage() {
                                 setRenameError('')
                               }}
                             >
-                              编辑名称
+                              编辑
                             </Button>
                             <Button
                               small
@@ -525,71 +531,85 @@ export function SubscriptionsPage() {
         ))}
       {tab === 'nodes' && (
         <>
-          <div className="tools">
-            <Select
-              label="按订阅筛选"
-              value={source}
-              onChange={(source) => changeFilters({ source })}
-              options={[
-                { value: 'all', label: '全部订阅' },
-                ...subscriptions.map((item) => ({ value: item.id, label: item.name })),
-              ]}
-            />
-            <Select
-              label="按国家／地区筛选"
-              value={country}
-              onChange={(country) => changeFilters({ country })}
-              options={[
-                { value: 'all', label: '全部国家／地区' },
-                ...[...countries]
-                  .filter(([code]) => code !== 'unknown')
-                  .sort((a, b) => a[1].localeCompare(b[1], 'zh-CN'))
-                  .map(([value, label]) => ({ value, label })),
-                ...(countries.has('unknown') ? [{ value: 'unknown', label: countries.get('unknown')! }] : []),
-              ]}
-            />
-            <div className="search">
-              <Icon name="search" />
-              <input
-                className="cm-input"
-                type="search"
-                aria-label="搜索节点名称"
-                placeholder="搜索节点名称或协议"
-                value={query}
-                onChange={(event) => changeFilters({ query: event.target.value })}
+          <div className="library-toolbar">
+            <div className="tools">
+              <Select
+                label="按订阅筛选"
+                value={source}
+                onChange={(source) => changeFilters({ source })}
+                options={[
+                  { value: 'all', label: '全部订阅' },
+                  ...subscriptions.map((item) => ({ value: item.id, label: item.name })),
+                ]}
               />
+              <Select
+                label="按国家／地区筛选"
+                value={country}
+                onChange={(country) => changeFilters({ country })}
+                options={[
+                  { value: 'all', label: '全部国家／地区' },
+                  ...[...countries]
+                    .filter(([code]) => code !== 'unknown')
+                    .sort((a, b) => a[1].localeCompare(b[1], 'zh-CN'))
+                    .map(([value, label]) => ({ value, label })),
+                  ...(countries.has('unknown')
+                    ? [{ value: 'unknown', label: countries.get('unknown')! }]
+                    : []),
+                ]}
+              />
+              <div className="search">
+                <Icon name="search" />
+                <input
+                  className="cm-input"
+                  type="search"
+                  aria-label="搜索节点名称"
+                  placeholder="搜索节点名称或协议"
+                  value={query}
+                  onChange={(event) => changeFilters({ query: event.target.value })}
+                />
+              </div>
             </div>
-            <Button
-              busy={testingSelected}
-              disabled={nodeActionsDisabled}
-              onClick={() => setNodeAction('test')}
-            >
-              {testingSelected ? '正在测速…' : '测速所选节点'}
-            </Button>
-            <Button
-              busy={checkingSelected}
-              disabled={nodeActionsDisabled}
-              onClick={() => setNodeAction('quality')}
-            >
-              {checkingSelected ? '正在检测 IP…' : '检测所选节点 IP'}
-            </Button>
+            <div className="library-selection">
+              <span className="cm-help" role="status">
+                {showNodeLoading
+                  ? '正在读取节点…'
+                  : `当前列表 ${visible.length} 个节点 · 已选 ${selectedNodes.length} 个`}
+              </span>
+              {selectedNodes.length > 0 && (
+                <Button small variant="ghost" onClick={() => setSelectedNodeKeys(new Set())}>
+                  清空选择
+                </Button>
+              )}
+              <span className="spacer" />
+              <Button
+                small
+                icon="pulse"
+                busy={testingSelected}
+                disabled={nodeActionsDisabled}
+                onClick={() => setNodeAction('test')}
+              >
+                {testingSelected ? '正在测速…' : '测速所选'}
+              </Button>
+              <Button
+                small
+                icon="shield"
+                busy={checkingSelected}
+                disabled={nodeActionsDisabled}
+                onClick={() => setNodeAction('quality')}
+              >
+                {checkingSelected ? '正在检测 IP…' : '检测所选 IP'}
+              </Button>
+            </div>
           </div>
-          <div className="cm-row node-selection-tools">
-            <span className="cm-help" role="status">当前列表 {visible.length} 个节点，已选 {selectedNodes.length} 个</span>
-            <Button small variant="ghost" disabled={!selectedNodes.length} onClick={() => setSelectedNodeKeys(new Set())}>
-              清空选择
-            </Button>
-          </div>
-          <p className="cm-help">
-            单个节点可直接点击行内按钮；勾选节点后可批量测速或检测 IP，表头复选框可全选当前列表中支持的节点。切换筛选条件会清空选择。
-            国家／地区按节点名称中的国旗或名称识别，不代表实测出口 IP 归属。
-          </p>
-          <p className="cm-help node-quality-help">
-            延迟为经节点访问测试网址的耗时，结果也会显示在创建实例时。
-          </p>
-          <p className="cm-help node-quality-help">
-            IP 属性和系数由 IPPure 提供，系数范围 0–100%，数值越低风险越低。IP 检测按节点依次进行，结果标注检测时间。
-          </p>
+          <details className="library-help">
+            <summary>列表说明</summary>
+            <ul className="rules">
+              <li>单个节点可直接点击行内按钮；勾选后可批量测速或检测 IP，表头复选框全选当前列表中支持的节点。切换筛选条件会清空选择。</li>
+              <li>国家／地区按节点名称中的国旗或名称识别，不代表实测出口 IP 归属。</li>
+              <li>延迟为经节点访问测试网址的耗时，结果也会显示在创建实例时。</li>
+              <li>IP 属性和系数由 IPPure 提供，系数范围 0–100%，数值越低风险越低。IP 检测按节点依次进行，结果标注检测时间。</li>
+            </ul>
+          </details>
           {tasks.filter((task) => isActive(task) && ['test-nodes', 'check-node-quality'].includes(task.kind)).map((task) => (
             <NodeTaskNotice key={task.id} task={task} subscriptionName={subscriptionById.get(task.subscription_id || '')?.name} />
           ))}
@@ -598,7 +618,7 @@ export function SubscriptionsPage() {
               {nodeError}
             </Notice>
           )}
-          {nodeLoading ? (
+          {showNodeLoading ? (
             <div className="loading-state">
               <span className="cm-spin" />
               正在读取节点…
@@ -625,7 +645,6 @@ export function SubscriptionsPage() {
                     <th>所属订阅</th>
                     <th>节点名称</th>
                     <th>协议</th>
-                    <th>是否支持</th>
                     <th>延迟</th>
                     <th>IP 属性</th>
                     <th title="IPPure 风险系数，0–100%，越低风险越低">IPPure 系数</th>
@@ -652,7 +671,7 @@ export function SubscriptionsPage() {
                             onChange={(event) => toggleNode(node, event.target.checked)}
                           />
                         </td>
-                        <td>
+                        <td className="node-source-cell">
                           {subscription?.name || '已删除的订阅'}
                           {subscription?.last_error && (
                             <div className="cm-cell-sub tone-warn">缓存数据</div>
@@ -664,17 +683,12 @@ export function SubscriptionsPage() {
                             <span className="cm-cell-sub cm-mono">{node.id}</span>
                           </div>
                         </td>
-                        <td>{node.type}</td>
                         <td>
                           <div className="cm-status">
-                            <Badge
-                              state={{
-                                tone: node.supported ? 'ok' : 'neutral',
-                                label: node.supported ? '支持' : '不支持',
-                                dot: node.supported ? undefined : 'hollow',
-                              }}
-                            />
-                            {node.reason && <span className="cm-cell-sub">{node.reason}</span>}
+                            <span className="cm-badge">{node.type}</span>
+                            {!node.supported && (
+                              <span className="cm-cell-sub">不支持 · {node.reason}</span>
+                            )}
                           </div>
                         </td>
                         <td>

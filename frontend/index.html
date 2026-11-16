@@ -6,6 +6,19 @@
     <meta name="theme-color" content="#0f766e" />
     <meta name="description" content="Claude 容器：管理本机独立浏览器环境、代理与工作区。" />
     <title>Claude 容器</title>
+    <script>
+      // 首次绘制前应用已保存的主题，避免先闪浅色，带过渡的控件停在浅色背景上。
+      ;(function () {
+        try {
+          var saved = localStorage.getItem('cbc-theme')
+          var systemDark = matchMedia('(prefers-color-scheme: dark)').matches
+          var dark = saved === 'dark' || (saved !== 'light' && systemDark)
+          document.documentElement.dataset.theme = dark ? 'dark' : 'light'
+        } catch (error) {
+          /* 存储不可用时交给 React 再设置一次。 */
+        }
+      })()
+    </script>
   </head>
   <body>
     <div id="root"></div>

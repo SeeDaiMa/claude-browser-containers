@@ -1,0 +1,226 @@
+/*
+ * 代理库、回收站、设置页的专属样式。
+ * 通用控件（卡片、表格、按钮）来自 components.css。
+ */
+
+/* ---------- 可折叠说明 ---------- */
+.library-help {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.library-help > summary {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 8px 12px;
+  color: var(--ink-muted);
+  font-size: 12.5px;
+  list-style: none;
+  cursor: pointer;
+}
+
+.library-help > summary::-webkit-details-marker {
+  display: none;
+}
+
+.library-help > summary::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform 0.15s ease;
+}
+
+.library-help[open] > summary::before {
+  transform: rotate(45deg);
+}
+
+.library-help > summary:hover {
+  color: var(--ink);
+}
+
+.library-help > .rules {
+  padding: 0 16px 12px 32px;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 21px;
+}
+
+/* ---------- 代理库 · 节点工具栏 ---------- */
+.library-toolbar {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.library-selection {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+  min-height: 32px;
+  padding: 4px 4px 4px 12px;
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+}
+
+.library-selection .cm-help {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.subscription-node-table .node-source-cell {
+  white-space: nowrap;
+}
+
+.subscription-node-table .cm-cell-name strong {
+  min-width: 180px;
+}
+
+/* ---------- 回收站 ---------- */
+.trash-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: baseline;
+  color: var(--ink);
+  font-size: 13.5px;
+}
+
+.trash-summary .cm-help {
+  margin: 0;
+}
+
+/* ---------- 设置 ---------- */
+.settings-docker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.settings-docker .cm-help {
+  margin: 0;
+}
+
+.settings-section-label {
+  color: var(--ink-muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.settings-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.settings-stats--2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.settings-stats > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+}
+
+.settings-stats dt {
+  overflow: hidden;
+  color: var(--ink-muted);
+  font-size: 12px;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-stats dd {
+  margin: 0;
+  color: var(--ink);
+  font: 600 16px/24px var(--font-display);
+}
+
+.settings-paths {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.settings-paths li {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr) auto;
+  gap: var(--space-3);
+  align-items: center;
+  padding: 6px 6px 6px 12px;
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+}
+
+.settings-paths__label {
+  color: var(--ink-muted);
+  font-size: 12.5px;
+}
+
+.settings-paths__value {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink);
+  font: 12.5px/20px var(--font-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-themes {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+
+.settings-theme {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  height: 40px;
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.settings-theme:hover {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+
+.settings-theme[aria-checked='true'] {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+  color: var(--primary-ink);
+  font-weight: 600;
+}
+
+@media (max-width: 540px) {
+  .settings-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .settings-paths li {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .settings-paths__label {
+    grid-column: 1 / -1;
+  }
+}

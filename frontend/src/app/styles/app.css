@@ -1012,7 +1012,7 @@ button, a, input { -webkit-tap-highlight-color: transparent; }
 .cm-notice { overflow-wrap: anywhere; }
 .empty-copy { max-width: 460px; margin: 0; }
 .empty-copy + .cm-row { padding-bottom: 0; }
-.page-note, .dialog-copy { margin: 0; }
+.dialog-copy { margin: 0; }
 .table-help { margin: 8px 2px 0; }
 .align-right { text-align: right !important; }
 .align-start { justify-self: start; }
@@ -1031,7 +1031,6 @@ button, a, input { -webkit-tap-highlight-color: transparent; }
 .name-editor { display: grid; grid-template-columns: 1fr auto; align-items: end; gap: var(--space-2); }
 .edit-status { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .inset-empty { box-shadow: none; }
-.readonly-control { display: flex; align-items: center; box-shadow: none; background: var(--surface-2); }
 .cm-metric__value { min-height: 30px; display: flex; align-items: center; }
 .cm-table-wrap { overflow: auto; }
 .cm-table { min-width: 750px; }
@@ -1147,9 +1146,8 @@ button, a, input { -webkit-tap-highlight-color: transparent; }
   .cm-card__head { padding: 16px 16px 0; }
   .name-editor { grid-template-columns: 1fr; }
   .name-editor > .cm-btn { justify-self: start; }
-  .cm-node { grid-template-columns: 18px minmax(0, 1fr); padding: 12px; }
-  .cm-node > .cm-node__meta { grid-column: 2; }
   .cm-node__meta { overflow-wrap: anywhere; }
+  .cm-node { grid-template-columns: 16px minmax(0, 1fr); row-gap: 6px; padding: 10px 12px; }
   .cm-browser__tag { display: none; }
   .top-ws { gap: 4px; }
   .top-ws .cm-select-btn { width: min(140px, 32vw); }
