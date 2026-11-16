@@ -525,22 +525,49 @@ def observe_exit(name):
     return observe_exit_info(name)['ip']
 
 
-def require_same_country(name, observation):
-    """只在本次固定入口与 Claude 出口均可确认且同国时放行，否则立即关闭代理。"""
+def _country(value):
+    code = value.strip().upper() if isinstance(value, str) else ''
+    return code if len(code) == 2 and code.isascii() and code.isalpha() and code not in ('XX', 'ZZ') else None
+
+
+def baseline_exit_country(name):
+    """该实例最近一次成功时的 Claude 出口国家。
+
+    返回 (国家代码或 None, 记录是否可读)。从未成功过时返回 (None, True)。
+    """
     import geolocation
+    import store
     try:
-        firewall = read_json(CONFIGS / name / 'runtime/firewall.json')
-    except (OSError, ValueError):
-        firewall = {}
-    addresses = firewall.get('upstream_ipv4') if isinstance(firewall, dict) else None
-    entry_ip = addresses[0] if isinstance(addresses, list) and addresses and isinstance(addresses[0], str) else None
-    entry_country = geolocation.country_code(entry_ip)
-    exit_country = observation.get('country_code') if observation.get('status') == 'ok' else None
-    if isinstance(exit_country, str):
-        exit_country = exit_country.upper()
-    if entry_country and isinstance(exit_country, str) and entry_country == exit_country:
+        record = store.load_exits().get(name)
+    except (OSError, ValueError):  # SharedRecordError 是 ValueError 的子类
+        return None, False
+    if record is None:
+        return None, True
+    if not isinstance(record, dict) or not store.exit_record_readable(record):
+        return None, False
+    last = record.get('last_success')
+    if not isinstance(last, dict):
+        return None, True
+    return _country(last.get('country_code')) or _country(geolocation.country_code(last.get('ip'))), True
+
+
+def require_same_country(name, observation):
+    """只比较 Claude 出口，入口位置不参与判断（中转节点的入口和出口本就不在同一国家）。
+
+    放行条件：本次 Claude 出口国家可以确认，并且与该实例上次成功时的出口国家相同。
+    从未成功过的实例没有历史出口，只要求出口国家可以确认。
+    不满足时立即关闭本实例代理，保留原绑定。
+    """
+    exit_country = _country(observation.get('country_code')) if observation.get('status') == 'ok' else None
+    baseline, readable = baseline_exit_country(name)
+    if exit_country and readable and (baseline is None or baseline == exit_country):
         return
-    detail = '入口与 Claude 出口国家不同或无法确认。原绑定已保留，请检查原节点或新建实例。'
+    if not exit_country:
+        detail = 'Claude 出口国家无法确认。原绑定已保留，请检查原节点或新建实例。'
+    elif not readable:
+        detail = '出口记录无法读取，无法确认出口是否与上次一致。原绑定和原记录已保留，请检查出口记录。'
+    else:
+        detail = f'Claude 出口国家（{exit_country}）与上次成功时（{baseline}）不同。原绑定已保留，请检查原节点或新建实例。'
     if observation.get('status') == 'failed':
         detail = '代理连接失败。' + detail
     try:

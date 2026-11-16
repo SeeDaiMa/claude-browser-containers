@@ -109,6 +109,7 @@ def test_quality_progress_keeps_two_second_spacing(isolated, monkeypatch):
 def test_recovery_country_mismatch_disconnects_proxy_and_pauses_retries(isolated, monkeypatch):
     row = instance(isolated)
     store._save(store.CONFIGS / 'ifixture/runtime/firewall.json', {'upstream_ipv4': ['8.8.8.8']})
+    store.save_exit('ifixture', 'ok', '8.8.4.4', '', 'US')
     before = store.read_proxy('ifixture')
     events = []
     monkeypatch.setattr(core, '_preflight_boot', lambda _: None)
@@ -152,6 +153,7 @@ def test_country_rejection_disconnects_even_when_exit_storage_is_damaged(isolate
 def test_cli_country_failure_never_starts_browser(isolated, monkeypatch):
     instance(isolated)
     store._save(store.CONFIGS / 'ifixture/runtime/firewall.json', {'upstream_ipv4': ['8.8.8.8']})
+    store.save_exit('ifixture', 'ok', '8.8.4.4', '', 'US')
     commands = []
     monkeypatch.setattr(cbc, 'active', lambda _: False)
     monkeypatch.setattr(cbc, 'prepare', lambda *args, **kwargs: True)

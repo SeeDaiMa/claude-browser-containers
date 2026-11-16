@@ -49,6 +49,8 @@ export function WorkspacePage() {
   const [diagnostics, setDiagnostics] = useState(false)
   const [frameError, setFrameError] = useState(false)
   const [frameSize, setFrameSize] = useState({ width: 0, height: 0 })
+  const [claimingSize, setClaimingSize] = useState(false)
+  const lastSizeClaim = useRef(0)
   const stage = useRef<HTMLDivElement>(null)
   const frameViewport = useRef<HTMLDivElement>(null)
   const infoPanel = useRef<HTMLDivElement>(null)
@@ -88,6 +90,36 @@ export function WorkspacePage() {
     const timer = window.setTimeout(() => setSlowConnection(true), 15000)
     return () => window.clearTimeout(timer)
   }, [id, reconnect, showFrame])
+  // 同一实例可能同时在多个窗口打开（另一个标签、“在新窗口打开画面”）。远程桌面只有一个分辨率，
+  // 最后连上的窗口会把它改成自己的尺寸，其他窗口就会两边留黑。回到本窗口时把分辨率要回来：
+  // 临时让画面窄 1px 触发 noVNC 的尺寸检查，再恢复原宽度，noVNC 会按当前可视区重新申请分辨率。
+  useEffect(() => {
+    if (!showFrame) return
+    const claim = () => {
+      const now = Date.now()
+      if (now - lastSizeClaim.current < 3000) return
+      lastSizeClaim.current = now
+      setClaimingSize(true)
+    }
+    const visible = () => {
+      if (document.visibilityState === 'visible') claim()
+    }
+    const stageElement = stage.current
+    window.addEventListener('focus', claim)
+    document.addEventListener('visibilitychange', visible)
+    stageElement?.addEventListener('pointerenter', claim)
+    return () => {
+      window.removeEventListener('focus', claim)
+      document.removeEventListener('visibilitychange', visible)
+      stageElement?.removeEventListener('pointerenter', claim)
+    }
+  }, [showFrame, id])
+  useEffect(() => {
+    if (!claimingSize) return
+    // 留出时间让服务端回应第一次请求；恢复原宽度后 noVNC 会再核对一次并补发。
+    const timer = window.setTimeout(() => setClaimingSize(false), 1200)
+    return () => window.clearTimeout(timer)
+  }, [claimingSize])
   useEffect(() => {
     const update = () => setMaximized(!!document.fullscreenElement)
     const escape = (event: KeyboardEvent) => {
@@ -163,6 +195,23 @@ export function WorkspacePage() {
       row.instance_id === id && ['stop', 'restart', 'trash', 'start', 'create'].includes(row.kind),
   )
 
+  // 停止后仍显示最近一次检测到的出口，并标出国家／地区。
+  const exitIp = item.exit?.ip || item.exit?.last_success?.ip || ''
+  const exitCountry = item.exit?.ip ? formatCountry(item.exit.country_code) : ''
+  const exitLabel = exitIp ? `${exitIp}${exitCountry ? ` · ${exitCountry}` : ''}` : '—'
+
+  // 未运行卡片的说明随状态变化：启动中、上次启动失败、普通停止。
+  const runtime = runState(item, tasks, connected)
+  const idleMessage = task
+    ? '正在启动，完成后会自动连接浏览器画面。可以离开工作区，任务会在后台继续。'
+    : runtime.tone === 'danger'
+      ? '上次启动没有成功，原因见页面顶部的提示。浏览器数据和登录状态仍然保留。'
+      : '启动后即可连接浏览器，原有数据和登录状态会保留。'
+
+  function reloadPage() {
+    api.reloadPage(id).catch((reason: Error) => notify(reason.message, 'danger'))
+  }
+
   async function checkProxy() {
     setChecking(true)
     try {
@@ -228,11 +277,10 @@ export function WorkspacePage() {
             </div>
             <span className="cm-toolbar__sep" />
             <div className="cm-toolbar__group ws-kv">
-              <div className="cm-kv">
-                <span>代理 · 出口</span>
-                <span title={`${proxy.source} · ${proxy.node}`}>
-                  {proxy.node} · <span className="cm-mono">{item.exit?.ip || '—'}</span>
-                </span>
+              {/* 出口 IP 放在前面；节点名常常很长，只放在悬停提示里，避免把 IP 挤掉。 */}
+              <div className="cm-kv" title={`${proxy.source} · ${proxy.node}`}>
+                <span>出口 IP</span>
+                <span className="cm-mono">{exitLabel}</span>
               </div>
               <div className="cm-kv kv-mem">
                 <span>内存</span>
@@ -243,25 +291,28 @@ export function WorkspacePage() {
             </div>
             <span className="spacer" />
             <div className="cm-toolbar__group ws-actions">
-              <IconButton
-                icon="plug"
-                label="重连画面（不重启浏览器）"
-                disabled={!showFrame}
-                onClick={() => setReconnect((value) => value + 1)}
-              />
-              <IconButton
-                icon="refresh"
-                label="刷新网页（容器内）"
-                disabled={!showFrame || busy}
-                onClick={() =>
-                  api.reloadPage(id).catch((reason: Error) => notify(reason.message, 'danger'))
-                }
-              />
-              <IconButton
-                icon={maximized ? 'min' : 'max'}
-                label={maximized ? '退出全屏' : '全屏'}
-                onClick={() => void fullscreen()}
-              />
+              {/* 画面相关操作只在有画面时出现，停止时不再显示一排禁用图标。 */}
+              {showFrame && (
+                <>
+                  <IconButton
+                    icon="plug"
+                    label="重连画面（不重启浏览器）"
+                    onClick={() => setReconnect((value) => value + 1)}
+                  />
+                  <IconButton
+                    icon="refresh"
+                    label="刷新网页（容器内）"
+                    disabled={busy}
+                    onClick={reloadPage}
+                  />
+                  <IconButton
+                    icon={maximized ? 'min' : 'max'}
+                    label={maximized ? '退出全屏' : '全屏'}
+                    onClick={() => void fullscreen()}
+                  />
+                  <span className="cm-toolbar__sep" />
+                </>
+              )}
               <IconButton
                 icon="edit"
                 label="编辑实例"
@@ -298,21 +349,22 @@ export function WorkspacePage() {
         </div>
         <span className="spacer" />
         <LifecycleButton item={item} />
-        <IconButton
-          icon="plug"
-          label="重连画面"
-          disabled={!showFrame}
-          onClick={() => setReconnect((value) => value + 1)}
-        />
-        <IconButton
-          icon="refresh"
-          label="刷新网页（容器内）"
-          disabled={!showFrame || busy}
-          onClick={() =>
-            api.reloadPage(id).catch((reason: Error) => notify(reason.message, 'danger'))
-          }
-        />
-        <IconButton icon="max" label="全屏" onClick={() => void fullscreen()} />
+        {showFrame && (
+          <>
+            <IconButton
+              icon="plug"
+              label="重连画面"
+              onClick={() => setReconnect((value) => value + 1)}
+            />
+            <IconButton
+              icon="refresh"
+              label="刷新网页（容器内）"
+              disabled={busy}
+              onClick={reloadPage}
+            />
+            <IconButton icon="max" label="全屏" onClick={() => void fullscreen()} />
+          </>
+        )}
         <InstanceMenu
           item={item}
           onDiagnostics={() => {
@@ -347,14 +399,26 @@ export function WorkspacePage() {
                   编辑代理
                 </ButtonLink>
               )}
-              <Button small busy={checking} disabled={busy} onClick={() => void checkProxy()}>
-                重新检测
-              </Button>
+              {/* 出口检测只对运行中的实例有效；停止后给出能真正解决问题的入口。 */}
+              {showFrame ? (
+                <Button small busy={checking} disabled={busy} onClick={() => void checkProxy()}>
+                  重新检测
+                </Button>
+              ) : (
+                item.proxy_locked && (
+                  <ButtonLink small icon="plus" to="/new">
+                    新建实例
+                  </ButtonLink>
+                )
+              )}
             </>
           }
         >
-          {item.exit?.detail} 网页暂时无法联网，浏览器数据和登录状态保留。
-          {item.proxy_locked && ' 代理已锁定，不能更换节点。'}
+          {item.exit?.detail}
+          {showFrame
+            ? ' 网页暂时无法联网，浏览器数据和登录状态保留。'
+            : ' 实例已停止，浏览器数据和登录状态保留。'}
+          {item.proxy_locked && ' 代理已锁定，不能更换节点；需要别的出口时请新建实例。'}
         </Notice>
       )}
       {!task && item.proxy.stale && (
@@ -392,7 +456,7 @@ export function WorkspacePage() {
                 key={`${id}-${reconnect}`}
                 title={`${item.display_name}的浏览器画面`}
                 src={frameUrl.toString()}
-                style={frameStyle}
+                style={claimingSize && !frameStyle ? { width: 'calc(100% - 1px)' } : frameStyle}
                 allow="clipboard-read; clipboard-write; fullscreen"
                 onLoad={() => {
                   setLoading(false)
@@ -406,18 +470,54 @@ export function WorkspacePage() {
             )}
             {!showFrame ? (
               <div className="cm-browser__overlay">
-                <div className="overlay-card">
-                  <Icon name={connected ? 'inst' : 'plug'} className="big" />
-                  <h2 className="cm-empty__title">
-                    {connected ? '实例已停止' : '画面暂时无法连接'}
-                  </h2>
-                  <p className="cm-muted">
-                    {connected
-                      ? '启动后即可连接浏览器，原有数据和登录状态会保留。'
-                      : '请确认 Docker 已启动。实例信息和浏览器数据仍保存在本机。'}
-                  </p>
-                  {connected && <LifecycleButton item={item} fullLabel />}
-                </div>
+                {connected ? (
+                  <section className="ws-idle" aria-label={`${item.display_name} 未运行`}>
+                    <div className="ws-idle__head">
+                      <span className="ws-idle__icon">
+                        <Icon name="inst" />
+                      </span>
+                      <div className="ws-idle__title">
+                        <h2>{item.display_name}</h2>
+                        <Badge state={runState(item, tasks, connected)} />
+                      </div>
+                    </div>
+                    <p className="cm-muted">{idleMessage}</p>
+                    <dl className="ws-idle__facts">
+                      <div>
+                        <dt>{item.exit?.ip ? '出口 IP' : '上次出口 IP'}</dt>
+                        <dd className="cm-mono">{exitLabel}</dd>
+                      </div>
+                      <div>
+                        <dt>内存上限</dt>
+                        <dd className="cm-num">{formatMemory(item.usage.memory_limit_mib)}</dd>
+                      </div>
+                      <div className="ws-idle__wide">
+                        <dt>节点</dt>
+                        <dd title={proxy.node}>{proxy.node}</dd>
+                      </div>
+                      <div className="ws-idle__wide">
+                        <dt>来源</dt>
+                        <dd>{proxy.source}</dd>
+                      </div>
+                    </dl>
+                    <div className="ws-idle__actions">
+                      <LifecycleButton item={item} fullLabel />
+                      {!task && (
+                        <ButtonLink small icon="edit" to={`/instance/${id}/edit`}>
+                          编辑实例
+                        </ButtonLink>
+                      )}
+                    </div>
+                  </section>
+                ) : (
+                  <div className="overlay-card">
+                    <Icon name="plug" className="big" />
+                    <h2 className="cm-empty__title">画面暂时无法连接</h2>
+                    <p className="cm-muted">
+                      请确认 Docker 已启动。实例信息和浏览器数据仍保存在本机。
+                    </p>
+                  </div>
+                )}
               </div>
             ) : (
               (loading || frameError) && (
@@ -458,10 +558,12 @@ export function WorkspacePage() {
               <dd>{item.display_name}</dd>
               <dt>内部 ID</dt>
               <dd className="cm-mono">{item.id}</dd>
-              <dt>创建时间</dt>
-              <dd>{formatDate(item.created_at)}</dd>
-              <dt>画面连接</dt>
-              <dd>仅当前实例</dd>
+              {item.created_at && (
+                <>
+                  <dt>创建时间</dt>
+                  <dd>{formatDate(item.created_at)}</dd>
+                </>
+              )}
             </dl>
             {showFrame && (
               <a

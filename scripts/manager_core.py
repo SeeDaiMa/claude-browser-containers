@@ -539,9 +539,9 @@ def _validate_binding(payload, resolve=False):
 
 
 def _require_same_country(slug, observation):
-    """启动和自动恢复只比较本次连上的入口 IPv4 与 Claude 出口。未知或不一致就停止联网。
+    """启动和自动恢复只看 Claude 出口：国家须可确认，且与该实例上次成功时一致，否则停止联网。
 
-    不使用节点名称里的国家，也不声称服务商内部或公网中间路由位于同一国家。
+    入口位置不参与判断；不使用节点名称里的国家。
     """
     return cbc.require_same_country(slug, observation)
 
