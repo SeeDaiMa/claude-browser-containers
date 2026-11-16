@@ -1,0 +1,10 @@
+{
+  "claude-a": {
+    "mode": "global",
+    "node": "节点完整名称或 nodes.sh 里的序号"
+  },
+  "claude-b": {
+    "mode": "global",
+    "node": "另一个节点的完整名称或序号"
+  }
+}

@@ -1,0 +1,99 @@
+/* 由用户提供的 design-system/tokens.json 生成。 */
+
+:root, :root[data-theme="light"] {
+  --bg: #f9fafb;
+  --mesh: rgba(20, 184, 166, 0.10);
+  --glass: rgba(255, 255, 255, 0.78);
+  --surface: #ffffff;
+  --surface-2: #f3f4f6;
+  --surface-3: rgba(17, 24, 39, 0.05);
+  --border: #eceef1;
+  --seg-track: rgba(118, 118, 128, 0.14);
+  --border-strong: #8a919c;
+  --control-border: #d1d5db;
+  --ink: #111827;
+  --text: #374151;
+  --ink-muted: #5f6673;
+  --primary: #0f766e;
+  --primary-hover: #115e59;
+  --on-primary: #ffffff;
+  --primary-soft: #f0fdfa;
+  --primary-ink: #0f766e;
+  --focus-ring: #0d9488;
+  --success: #15803d;
+  --success-soft: #f0fdf4;
+  --warning: #b45309;
+  --warning-soft: #fffbeb;
+  --danger: #c62828;
+  --danger-soft: #fef2f2;
+  --on-danger: #ffffff;
+  --info: #2563eb;
+  --info-soft: #eff6ff;
+  --neutral-soft: #f1f2f4;
+  --canvas: #ffffff;
+  --scrim: rgba(17, 24, 39, 0.30);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.06);
+  --shadow-control: 0 1px 3px rgba(17, 24, 39, 0.12);
+  --shadow-pop: 0 24px 64px rgba(17, 24, 39, 0.18);
+}
+
+:root[data-theme="dark"] {
+  --bg: #020617;
+  --mesh: rgba(20, 184, 166, 0.08);
+  --glass: rgba(15, 23, 42, 0.78);
+  --surface: #0f172a;
+  --surface-2: #1e293b;
+  --surface-3: rgba(248, 250, 252, 0.06);
+  --border: #1e293b;
+  --seg-track: rgba(118, 118, 128, 0.28);
+  --border-strong: #64748b;
+  --control-border: #334155;
+  --ink: #f9fafb;
+  --text: #d1d5db;
+  --ink-muted: #9ca3af;
+  --primary: #14b8a6;
+  --primary-hover: #2dd4bf;
+  --on-primary: #042f2e;
+  --primary-soft: rgba(19, 78, 74, 0.35);
+  --primary-ink: #5eead4;
+  --focus-ring: #2dd4bf;
+  --success: #4ade80;
+  --success-soft: rgba(6, 78, 59, 0.35);
+  --warning: #fbbf24;
+  --warning-soft: rgba(120, 53, 15, 0.35);
+  --danger: #f87171;
+  --danger-soft: rgba(127, 29, 29, 0.35);
+  --on-danger: #1f0a0a;
+  --info: #60a5fa;
+  --info-soft: rgba(30, 58, 138, 0.35);
+  --neutral-soft: #1e293b;
+  --canvas: #0b1220;
+  --scrim: rgba(2, 6, 23, 0.70);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4);
+  --shadow-control: 0 1px 3px rgba(0, 0, 0, 0.5);
+  --shadow-pop: 0 24px 64px rgba(0, 0, 0, 0.6);
+}
+
+:root {
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-tile: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+  --radius-pill: 999px;
+  --sidebar-width: 240px;
+  --sidebar-collapsed: 64px;
+  --topbar-height: 60px;
+  --control-height: 34px;
+  --row-height: 56px;
+  --font-sans: system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+  --font-display: system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Display", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-mono: "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+}

@@ -1,0 +1,118 @@
+# Use scripts/*.sh: each invocation supplies one instance's non-secret settings.
+x-network: &network
+  image: ${NETWORK_IMAGE:?Run scripts/init.sh}
+  platform: linux/arm64
+  pull_policy: never
+  read_only: true
+  init: true
+  cap_drop: [ALL]
+  security_opt: ["seccomp=./configs/seccomp-default.json", "no-new-privileges:true"]
+  tmpfs: ["/run:rw,noexec,nosuid,size=16m", "/tmp:rw,noexec,nosuid,size=16m"]
+  pids_limit: 64
+  cpus: 0.25
+  restart: "no"
+  logging: &logging
+    driver: local
+    options: {max-size: 2m, max-file: "2"}
+  labels: &labels
+    io.cbc.project: claude-browser-containers
+    io.cbc.instance: ${INSTANCE}
+  sysctls:
+    net.ipv4.ip_forward: "0"
+    net.ipv6.conf.all.disable_ipv6: "1"
+    net.ipv6.conf.default.disable_ipv6: "1"
+services:
+  guard:
+    <<: *network
+    container_name: cbc-${INSTANCE}-guard
+    cap_add: [NET_ADMIN, NET_RAW, SETGID]
+    mem_limit: ${GUARD_MEMORY_MIB}m
+    memswap_limit: ${GUARD_MEMORY_MIB}m
+    environment: {ROLE: guard, BRIDGE_IP: "${BRIDGE_IP}"}
+    ports: ["127.0.0.1:${WEB_PORT}:5800"]
+    networks:
+      isolated: {ipv4_address: "${BROWSER_IP}"}
+      egress: {ipv4_address: "${INGRESS_IP}"}
+    healthcheck:
+      test: [CMD, test, -f, /run/firewall-ready]
+      interval: 2s
+      timeout: 2s
+      retries: 10
+  proxy:
+    <<: *network
+    container_name: cbc-${INSTANCE}-proxy
+    cap_add: [NET_ADMIN, SETUID, SETGID, SETPCAP, CHOWN, DAC_OVERRIDE, KILL]
+    mem_limit: ${PROXY_MEMORY_MIB}m
+    memswap_limit: ${PROXY_MEMORY_MIB}m
+    environment: {ROLE: proxy, BRIDGE_IP: "${BRIDGE_IP}", BROWSER_IP: "${BROWSER_IP}", CBC_CONFIG_REVISION: "${PROXY_REVISION}"}
+    volumes: ["./configs/${INSTANCE}/runtime:/settings:ro"]
+    networks:
+      isolated: {ipv4_address: "${BRIDGE_IP}"}
+      egress: {ipv4_address: "${EGRESS_IP}"}
+    tmpfs: ["/run:rw,noexec,nosuid,size=16m", "/tmp:rw,noexec,nosuid,size=64m"]
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /run/firewall-ready && pgrep -x gost >/dev/null && { test ! -f /run/mihomo.pid || pgrep -x mihomo >/dev/null; }"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+  browser:
+    image: ${CHROMIUM_IMAGE:?Run scripts/init.sh}
+    platform: linux/arm64
+    pull_policy: never
+    container_name: cbc-${INSTANCE}-browser
+    network_mode: service:guard
+    depends_on:
+      guard: {condition: service_healthy}
+      proxy: {condition: service_healthy}
+    cap_drop: [NET_RAW]
+    security_opt: ["seccomp=./configs/seccomp-chromium.json", "no-new-privileges:true"]
+    mem_limit: ${BROWSER_MEMORY_MIB}m
+    memswap_limit: ${BROWSER_MEMORY_MIB}m
+    cpus: ${BROWSER_CPUS}
+    shm_size: ${BROWSER_SHM_MIB}m
+    pids_limit: 384
+    restart: "no"
+    environment:
+      USER_ID: "1000"
+      GROUP_ID: "1000"
+      UMASK: "0077"
+      DISPLAY_WIDTH: "2880"
+      DISPLAY_HEIGHT: "1800"
+      KEEP_APP_RUNNING: "0"
+      SECURE_CONNECTION: "0"
+      WEB_AUDIO: "0"
+      WEB_TERMINAL: "0"
+      WEB_FILE_MANAGER: "0"
+      WEB_NOTIFICATION: "0"
+      WEB_HOST_CLIPBOARD_SYNC: "1"
+      CHROMIUM_REMOTE_DEBUGGING: "${CDP_ENABLED:-0}"
+      CBC_BRIDGE_IP: "${BRIDGE_IP}"
+      CBC_BROWSER_REVISION: "${BROWSER_REVISION}"
+    volumes:
+      - ./data/${INSTANCE}:/config
+      - ./configs/chromium-policy.json:/etc/chromium/policies/managed/cbc.json:ro
+      - ./configs/chromium-params.sh:/etc/services.d/app/params:ro
+      - ./configs/novnc-clipboard-focus.sh:/etc/cont-init.d/15-clipboard-focus.sh:ro
+      - ./configs/novnc-keyboard-shortcuts.sh:/etc/cont-init.d/16-keyboard-shortcuts.sh:ro
+      - ./configs/novnc-native-cursor.sh:/etc/cont-init.d/17-native-cursor.sh:ro
+      - ./configs/novnc-hidpi.sh:/etc/cont-init.d/18-hidpi.sh:ro
+      - ./configs/novnc-ime.sh:/etc/cont-init.d/19-ime.sh:ro
+      - ./configs/novnc-ime.js:/opt/noVNC/core/input/cbc-ime.js:ro
+      - ./configs/novnc-clipboard-image.sh:/etc/cont-init.d/21-clipboard-image.sh:ro
+      - ./configs/cbc-clipboard-image.nginx.conf:/etc/cbc-clipboard-image.nginx.conf:ro
+      - ./configs/bin/cbc-clipboard-image:/usr/local/bin/cbc-clipboard-image:ro
+      - ./configs/cbc-clipboard-image-run.sh:/etc/services.d/cbc-clipboard-image/run:ro
+    logging: *logging
+    labels: *labels
+networks:
+  isolated:
+    name: cbc-${INSTANCE}-isolated
+    internal: true
+    enable_ipv6: false
+    ipam: {config: [{subnet: "${INTERNAL_SUBNET}"}]}
+    labels: *labels
+  egress:
+    name: cbc-${INSTANCE}-egress
+    enable_ipv6: false
+    ipam: {config: [{subnet: "${EGRESS_SUBNET}"}]}
+    labels: *labels

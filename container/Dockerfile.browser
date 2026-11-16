@@ -1,0 +1,8 @@
+ARG CHROMIUM_BASE=jlesage/chromium:v26.10.1@sha256:71e2e8468eb00519a1f90cbb82a12651c2541c6f5e85030faf9c8dd2ec2cc831
+FROM ${CHROMIUM_BASE}
+# Send a normal window-close event before Docker stops the browser, so Chromium
+# commits newly written cookies. Adds no running service or management listener.
+# The minimal upstream image has Latin fonts only. Install CJK fallback fonts
+# at build time, since isolated browsers cannot fetch packages directly at boot.
+RUN add-pkg xdotool=4.20260303.1-r0 font-noto-cjk=0_git20220127-r1 \
+    && fc-cache -f
