@@ -1,69 +1,72 @@
 # Claude Browser Containers
 
-在 Apple Silicon Mac 上通过 Docker 运行独立 Chromium 实例的本机管理台。每个实例有自己的浏览器 Profile、Cookie、缓存、下载目录和代理上游。前端使用 React + TypeScript，后端使用 FastAPI。
+在 Apple Silicon Mac 上管理多套独立 Chromium 浏览器。每个实例分别保存 Cookie、登录状态、缓存和下载，并使用自己绑定的代理。
 
-本仓库只包含源码、通用配置和合成测试数据。浏览器资料、账号登录状态、订阅地址、节点凭据、实例记录、IP 历史、运行截图和备份均保留在使用者本机。
+**使用流程：启动管理台 → 添加代理 → 创建实例 → 在工作区使用浏览器 → 用完后停止实例。**
 
-## 功能
+- **第一次使用**：从[首次安装](#一首次安装只需一次)开始。
+- **已经安装过**：直接看[日常启动](#二日常启动)。
+- **准备创建浏览器**：看[添加代理](#三添加代理)和[创建实例](#四创建并使用实例)。
+- **需要迁移或保留登录状态**：看[备份与恢复](#七备份与恢复)。
 
-- 在网页中创建、启动、停止、重启、改名、移入回收站、恢复和彻底删除实例。
-- 添加订阅或手动 SOCKS5，按节点测试延迟和 IP 属性。
-- 每个实例包含 browser、proxy、guard 三个容器；复用镜像，独立保存浏览器数据。
-- 浏览器只允许经自己的代理出站；代理故障时保留隔离规则。
-- 实例第一次成功启动后锁定代理绑定；同名节点变化时需重新确认。
-- 启动时检查固定入口 IPv4 与 Claude 出口的国家是否均可确认且相同。
-- 在工作区操作远程桌面，支持 Retina 显示、Mac Command 快捷键、中文输入和图片剪贴板。
-- 记录同一节点的出口 IP 变化，支持关闭本次提醒和查看本机历史。
-- 提供实例备份与恢复命令；备份包含登录状态和凭据，应私密保存。
+## 一、首次安装（只需一次）
 
-## 架构
+### 1. 准备环境
 
-```mermaid
-flowchart LR
-    Host[Mac 浏览器] -->|127.0.0.1| UI[管理台 / 实例画面]
-    UI --> Browser[Chromium 独立 Profile]
-    Browser --> Guard[实例防火墙]
-    Guard --> Gost[GOST]
-    Gost --> Mihomo[mihomo / 指定 SOCKS5]
-    Mihomo --> Upstream[固定上游节点]
-    Upstream --> Web[目标网站]
+需要提前安装：
+
+| 项目 | 要求 |
+| --- | --- |
+| 电脑 | Apple Silicon Mac；容器使用 Linux ARM64 |
+| Docker | Docker Desktop，安装后先打开并等待启动完成 |
+| Python | 3.12 或更新版本 |
+| 开发工具 | Git、Node.js、pnpm、uv |
+| 代理 | Clash / Mihomo 兼容的 HTTPS 订阅，或带用户名、密码的 SOCKS5 |
+
+可以在终端检查工具是否可用：
+
+```bash
+docker info
+python3 --version
+node --version
+pnpm --version
+uv --version
 ```
 
-每个实例使用独立 Compose project 和网络。guard 与 browser 共用网络空间，由内核防火墙限制出站。订阅模式下，GOST 与 mihomo 在同一个 proxy 容器中运行；手动 SOCKS5 模式下 GOST 直接连接指定代理。
+项目脚本不会自动安装这些系统工具，也不会修改系统代理。
 
-详细说明见 [容器架构](docs/ARCHITECTURE.md)、[管理台架构](docs/architecture/manager.md)、[API](docs/api/manager.md)和[安全边界](docs/SECURITY.md)。
-
-## 环境要求
-
-Apple Silicon Mac、Docker Desktop、Python 3.12+、Node.js、pnpm、uv，以及可用的代理服务。容器固定使用 Linux ARM64 镜像。脚本不负责安装系统软件，不修改系统代理或宿主防火墙。
-
-## 首次安装
+### 2. 下载项目
 
 ```bash
 git clone https://github.com/SeeDaiMa/claude-browser-containers.git
 cd claude-browser-containers
 ```
 
-源码不附带本机下载的二进制、地理数据库或已构建镜像，需要先准备以下资源。
+**下文所有终端命令都在项目根目录执行。** 新开终端后，先 `cd` 进入自己保存的 `claude-browser-containers` 目录。
 
-### 1. mihomo
+### 3. 准备运行资源
 
-从 [mihomo v1.19.34 官方发布页](https://github.com/MetaCubeX/mihomo/releases/tag/v1.19.34)取得 Linux ARM64 文件。以下命令会校验项目 Dockerfile 中记录的压缩包 SHA-256：
+公开仓库不包含已下载的二进制程序、国家数据库或本机浏览器数据。首次安装需要准备以下三项。
+
+**下载 mihomo。** 复制下面整段命令执行；下载、校验或解压失败时会停止这一段：
 
 ```bash
-curl -fL --proto '=https' --tlsv1.2 \
-  https://github.com/MetaCubeX/mihomo/releases/download/v1.19.34/mihomo-linux-arm64-v1.19.34.gz \
-  -o container/mihomo.gz
-printf '%s  %s\n' \
-  daaf78a6240a282cdfd75bcbf98fe321f6bd52765cc29e79f344191198f0b50f \
-  container/mihomo.gz | shasum -a 256 -c -
-gunzip container/mihomo.gz
-chmod 755 container/mihomo
+(
+  set -eu
+  curl -fL --proto '=https' --tlsv1.2 \
+    https://github.com/MetaCubeX/mihomo/releases/download/v1.19.34/mihomo-linux-arm64-v1.19.34.gz \
+    -o container/mihomo.gz
+  printf '%s  %s\n' \
+    daaf78a6240a282cdfd75bcbf98fe321f6bd52765cc29e79f344191198f0b50f \
+    container/mihomo.gz | shasum -a 256 -c -
+  gunzip container/mihomo.gz
+  chmod 755 container/mihomo
+)
 ```
 
-### 2. 图片剪贴板辅助程序
+校验时应显示 `container/mihomo.gz: OK`。该版本来源见 [mihomo 官方发布页](https://github.com/MetaCubeX/mihomo/releases/tag/v1.19.34)。
 
-在项目根目录执行源码注释中的编译命令：
+**编译图片剪贴板辅助程序。** 确认 Docker Desktop 已启动后执行：
 
 ```bash
 mkdir -p configs/bin
@@ -71,13 +74,17 @@ docker run --rm --platform linux/arm64 -v "$PWD:/src" -w /src \
   alpine:3.24 sh -c 'apk add --no-cache gcc musl-dev libx11-dev && gcc -O2 -Wall -Wextra -o configs/bin/cbc-clipboard-image configs/cbc-clipboard-image.c -lX11'
 ```
 
-### 3. 国家数据库
+**放置国家数据库。** 自行取得可合法使用的 MaxMind DB 国家数据库，例如 GeoLite2 Country，解压后将 `.mmdb` 文件命名为 `Country.mmdb`，放到：
 
-自行取得可合法使用的 MaxMind DB 国家数据库，保存为 `backend/resources/Country.mmdb`，详见[数据库说明](backend/resources/README.md)。国家无法确认时，配置代理的实例会无法通过入口与出口国家校验。
+```text
+backend/resources/Country.mmdb
+```
 
-### 4. 构建并启动
+文件要求与来源见[数据库说明](backend/resources/README.md)。启动实例时会检查代理入口与 Claude 出口的国家；国家无法确认或不一致时，实例不能通过启动检查，所以首次使用前应准备好数据库。
 
-先启动 Docker Desktop，然后执行：
+### 4. 初始化并打开管理台
+
+依次执行，前一条成功后再执行下一条：
 
 ```bash
 ./scripts/init.sh
@@ -85,59 +92,185 @@ docker run --rm --platform linux/arm64 -v "$PWD:/src" -w /src \
 ./scripts/start-manager.sh
 ```
 
-打开 http://127.0.0.1:5790 ，在代理库添加自己的订阅，或在创建实例时填写手动 SOCKS5。新安装不会创建默认实例或自带任何账号。
+- `init.sh`：下载并构建容器镜像，准备本机配置。首次运行需要等待镜像下载和构建完成。
+- `setup.sh`：安装项目依赖并构建管理台页面。
+- `start-manager.sh`：启动本机管理服务。
 
-`init.sh` 会准备固定版本镜像，并创建本机 `.env` 和 `images.lock.json`。`setup.sh` 安装项目依赖并构建前端。实例画面使用本机分配的端口；管理台只监听本机 loopback。
+保持最后这条命令所在的终端运行，然后在本机浏览器打开：
 
-## 日常使用
+**[http://127.0.0.1:5790](http://127.0.0.1:5790)**
 
-```bash
-./scripts/status.sh
-./scripts/start.sh <实例ID>
-./scripts/stop.sh <实例ID>
-./scripts/restart.sh <实例ID>
-./scripts/check-proxy.sh <实例ID>
-```
+使用 `http`。新安装的实例列表为空，需要按下面的流程添加自己的代理并创建实例。
 
-实例 ID 可在管理台查看。日常操作优先使用网页。网页创建实例需要代理；CLI 可以先创建离线实例，未配置代理时不能访问公网。
+## 二、日常启动
 
-停止和重启会正常关闭 Chromium，等待浏览器保存数据。资源上限可通过本机 `.env` 调整，修改后按需重启相应实例。
+已经完成安装后，每次使用按以下顺序操作：
 
-本机浏览器首次提示剪贴板权限时选择允许。Mac 的 `⌘C`、`⌘V` 等快捷键会映射到容器内的 `Ctrl`；先点击容器内的输入位置再粘贴。中文输入使用本机输入法，图片粘贴单张上限 20 MB。
+1. 打开 Docker Desktop，等待 Docker 可用。
+2. 在项目目录的终端执行 `./scripts/start-manager.sh`，并保持终端运行。
+3. 打开 [管理台](http://127.0.0.1:5790)。
+4. 在实例列表找到要使用的实例，点击“启动”，再点击“打开”进入工作区。
 
-## 备份和恢复
+管理服务已经运行时，直接打开管理台即可。日常启动无需重复下载资源或运行 `init.sh`。
+
+**打开管理台不会自动启动已停止的实例。关闭管理台网页也不会停止正在运行的实例。**
+
+## 三、添加代理
+
+可以使用订阅节点或手动 SOCKS5，选择其中一种即可。
+
+### 方式 A：使用订阅节点
+
+1. 在侧边栏进入“代理库”。
+2. 点击“添加订阅”。
+3. 填写便于辨认的订阅名称，以及 **Clash / Mihomo 兼容的 HTTPS 订阅地址**。
+4. 提交后等待后台任务完成，确认订阅添加成功。
+5. 切换到“节点”视图，查看导入的节点。
+6. 可直接使用节点行内的按钮测速或检测 IP；需要批量检测时，先勾选节点，再点击“测速所选节点”或“检测所选节点 IP”。
+
+测速和 IP 检测可帮助选择节点，不是创建实例前的必做步骤。标记为不支持的节点不能选择；仅使用 UDP 的节点协议不受支持。
+
+国家／地区筛选根据节点名称识别，**不代表实测出口国家**。节点 IP 检测结果也不一定等于访问 Claude 时的出口，实例启动时会另行检查。
+
+### 方式 B：使用手动 SOCKS5
+
+不需要先添加订阅。创建实例时，在“网络出口”中选择“手动 SOCKS5”，填写：
+
+- 主机地址：代理服务器域名或 IPv4。
+- 端口：代理服务提供的端口。
+- 用户名和密码：代理服务的认证信息。
+
+主机地址只填域名或 IP，不要填写 `http://`、`socks5://` 前缀。当前上游连接使用 IPv4，用户名和密码均为必填项。
+
+## 四、创建并使用实例
+
+### 1. 创建实例
+
+1. 回到实例列表，点击“创建实例”。
+2. 填写实例名称，例如“资料整理”。支持中文，长度为 1–32 个字符。
+3. 选择订阅节点，或填写手动 SOCKS5。
+4. 确认“创建前检查”各项通过，点击“创建并启动”。
+5. 等待创建、网络检查和启动完成；成功后会自动进入工作区。
+
+端口、内部 ID 和网络由系统分配，不需要手动填写。创建过程中可以离开该页面，后台任务仍会继续，不需要重复提交。
+
+**实例第一次成功启动后，代理绑定会锁定，不能再随意切换节点或 SOCKS5。** 如果之后需要使用另一条代理，应创建新实例。还从未成功启动的实例，可以在编辑页修改代理后重试。
+
+创建失败时，先看页面显示的具体原因。若实例已经创建但未启动成功，可点击“编辑并重试”，或从实例列表进入编辑页处理。
+
+### 2. 在工作区使用浏览器
+
+工作区中显示的是容器里的独立 Chromium。先点击远程画面，再像普通浏览器一样打开网页、输入文字和登录账号。账号需要自行登录，仓库不附带任何登录状态。
+
+| 操作 | 使用方法 |
+| --- | --- |
+| 复制、粘贴文字 | 本机浏览器提示剪贴板权限时选择允许；先点击容器内的目标位置，再按 `⌘C` / `⌘V` |
+| 粘贴截图 | 本机先复制图片，再点击容器内输入位置并按 `⌘V`；单张图片上限 20 MB |
+| 输入中文 | 在本机切换中文输入法，点击容器内输入位置后正常拼音选字 |
+| 常用快捷键 | Mac 的 `⌘A`、`⌘F`、`⌘Z` 等会转为容器内对应的 `Ctrl` 操作 |
+| 放大操作区域 | 点击工作区“全屏” |
+| 查看实例 ID、画面地址等信息 | 打开工作区右上角“实例详细信息” |
+| 画面暂时断开 | 按页面提示重连画面；重连本身不会重启浏览器 |
+
+多个实例分别保存浏览器数据。在一个实例里登录账号，不会把 Cookie 自动复制给另一个实例。
+
+### 3. 用完后停止实例
+
+先保存网页中尚未提交的内容，再通过实例列表或工作区的“停止”按钮关闭实例。停止会释放浏览器进程占用的资源，保留已保存的浏览器数据和登录状态。
+
+只关闭网页、离开工作区或关闭管理服务，都不等于停止浏览器容器。需要结束使用时，先在管理台停止实例；随后可在运行管理服务的终端按 `Ctrl+C` 退出服务。
+
+## 五、管理已有实例
+
+| 需求 | 操作与结果 |
+| --- | --- |
+| 继续使用 | 在实例列表点击“启动”，然后“打开”；原有浏览器数据继续保留 |
+| 临时关闭 | 点击“停止”，下次可再启动 |
+| 重启浏览器环境 | 在“更多操作”中选择“重启”；先保存网页内容，已保存的数据保留 |
+| 修改名称 | 进入编辑页改名；不会移动数据目录或重启浏览器 |
+| 查看出口 IP 变化 | 在实例列表展开“IP 变化”，或通过“更多操作”查看变化记录 |
+| 关闭一次 IP 变化提醒 | 点击“关闭本次提醒”；保留历史，下次出口变化会再次提醒 |
+| 暂时移除实例 | 选择“删除到回收站”；先停止实例，保留配置与浏览器数据 |
+| 恢复误删的实例 | 进入“回收站”并恢复，再回实例列表手动启动 |
+| 永久清除实例 | 在回收站选择彻底删除，核对目标后按页面要求确认；会清除对应数据 |
+
+回收站恢复后的实例是“已停止”，不会自动运行。
+
+## 六、维护订阅和节点
+
+**更新节点列表：** 在“代理库 → 订阅”中点击对应订阅的“刷新”。刷新失败会保留旧节点。若已绑定的节点发生变化或消失，相关实例会提示“需要重新确认”，不会自动换成其他节点。
+
+**重新确认节点：** 打开相关实例的编辑页，按提示重新确认同名节点。确认后在下次启动时生效；如果找不到同名节点，需要新建实例。
+
+**更换订阅地址：** 在订阅行点击“编辑名称”，弹窗中也可以填写“新的订阅地址”。提交后后台更新，保留订阅编号和仍能匹配的节点绑定，不会重启实例。留空则只修改名称。
+
+**删除订阅：** 有实例引用时不能删除，包括回收站里的实例。先处理这些实例的引用，再删除订阅。
+
+## 七、备份与恢复
+
+备份用于保留或迁移一个实例的浏览器数据，以及它依赖的代理和订阅配置。**不要只复制 `data/` 目录，否则可能缺少节点绑定和凭据。**
+
+### 备份
+
+先在工作区“实例详细信息”中找到内部 ID。以下 `<实例ID>` 要替换为实际 ID，并去掉尖括号：
 
 ```bash
 ./scripts/stop.sh <实例ID>
 ./scripts/backup-instance.sh <实例ID> backups/my-instance.tgz
+```
+
+备份完成后，需要继续使用时再启动：
+
+```bash
+./scripts/start.sh <实例ID>
+```
+
+### 恢复
+
+在已完成首次安装的项目目录中，执行：
+
+```bash
 ./scripts/restore-instance.sh backups/my-instance.tgz
 ```
 
-恢复不会覆盖已有实例，也不会自动启动。备份含 Cookie、登录状态、订阅绑定和凭据，不应上传到公开仓库。
+恢复会检查实例是否已存在、端口和网络是否冲突，不覆盖已有实例，也不会自动启动。恢复成功后，在管理台找到实例并手动启动。
 
-## 数据与版本控制
+**备份包含 Cookie、登录状态、订阅地址和代理凭据。请保存在私密位置，不要提交到 GitHub。**
 
-| 本机文件或目录 | 内容 | 是否提交 |
-| --- | --- | --- |
-| `data/` | Profile、Cookie、缓存、下载 | 否 |
-| `configs/<实例ID>/` | 实例信息、代理凭据、生成的运行配置 | 否 |
-| `configs/private/` | 订阅、节点、任务和出口历史 | 否 |
-| `configs/selection.json` | 实例节点绑定 | 否 |
-| `.env`、`images.lock.json` | 本机配置和镜像记录 | 否 |
-| `evidence/`、`backups/` | 截图、诊断、抓包和私密备份 | 否 |
-| `container/mihomo`、`configs/bin/`、`*.mmdb` | 本机准备的运行资源 | 否 |
-| `.env.example`、`configs/*.example.json` | 空白或示例模板 | 是 |
+## 八、常见问题
 
-`.gitignore` 对 `configs/` 采用明确的源码文件允许列表，新实例和未知文件默认被忽略。提交前检查暂存内容，不要强制添加私密文件。
+| 情况 | 处理方法 |
+| --- | --- |
+| 管理台打不开 | 确认 `start-manager.sh` 所在终端仍在运行，访问的是 `http://127.0.0.1:5790`；查看终端报错 |
+| 提示端口 5790 已被占用 | 先确认是否已有管理服务运行；若有，直接打开原来的管理台 |
+| 显示“Docker 未连接”或“状态未知” | 打开 Docker Desktop，确认 `docker info` 成功后再操作；“状态未知”不代表实例已经停止 |
+| 页面提示尚未构建 | 在项目目录重新执行 `./scripts/setup.sh`，完成后刷新页面 |
+| 首次构建镜像失败 | 检查 Docker 和下载网络；修复后重试 `./scripts/init.sh` |
+| 创建或启动时提示国家无法确认 | 检查 `backend/resources/Country.mmdb` 是否存在、格式是否正确；补齐或更换数据库后重启管理服务 |
+| 提示入口与出口国家不一致 | 检查所选代理的实际路由；当前实例不会自动换节点，未成功启动的可编辑代理，已锁定的需按提示处理或新建实例 |
+| 代理认证或连接失败 | 检查订阅是否有效、节点是否可用，以及 SOCKS5 地址、端口、用户名和密码是否正确 |
+| 节点需要重新确认 | 按上一节说明，在实例编辑页重新确认同名节点 |
+| 画面无法连接 | 确认实例已启动，等待启动完成后重连；也可从“实例详细信息”在新窗口打开画面 |
+| 无法复制、粘贴 | 允许本机浏览器的剪贴板权限，先点击容器内输入位置再操作；文本也可通过远程画面侧栏的 Clipboard 面板手动传递 |
 
-## 开发
+## 数据保存在哪里？
 
-见[开发与验证](docs/development/manager.md)和[启动说明](docs/deployment/manager.md)。源码中的示例域名、测试密码及测试 IP 用于合成夹具。
+| 位置 | 保存内容 |
+| --- | --- |
+| `data/<实例ID>/` | 浏览器 Profile、Cookie、缓存、下载 |
+| `configs/<实例ID>/` | 实例配置、手动代理凭据、生成的运行配置 |
+| `configs/private/` | 订阅地址、节点凭据、任务记录、出口 IP 历史 |
+| `configs/selection.json` | 实例与订阅节点的绑定 |
+| `backups/`、`evidence/` | 私密备份，以及本机生成的日志、截图、检测记录 |
 
-真实容器测试和 `scripts/acceptance.sh` 应在专用环境执行，它们可能创建容器或临时改写测试实例配置。运行截图与历史验收记录不随源码发布。
+上述目录和文件，以及本机 `.env`，已由 `.gitignore` 排除。公开仓库仅提供源码与通用模板；不要强制添加这些私密文件。
 
-## 依赖与边界
+## 进一步了解
 
-使用 [jlesage/chromium](https://github.com/jlesage/docker-chromium)、[GOST](https://github.com/go-gost/gost)、[mihomo](https://github.com/MetaCubeX/mihomo)、React、FastAPI 等第三方项目，相关组件遵循各自许可。Seccomp 配置基于 Moby，来源见[安全说明](docs/SECURITY.md)。
+- [部署说明](docs/deployment/manager.md)
+- [开发与验证](docs/development/manager.md)
+- [容器架构](docs/ARCHITECTURE.md) / [管理台架构](docs/architecture/manager.md)
+- [API 说明](docs/api/manager.md)
+- [安全边界](docs/SECURITY.md)
 
-本项目提供容器、数据和代理网络隔离，不保证网站接受特定代理或账号。目标网站仍可看到代理出口和浏览器常规特征。默认本机 HTTP UI 无独立账号认证，不适合直接公开到互联网。
+本项目默认供本机使用，管理台与实例画面只绑定 `127.0.0.1`。它提供浏览器数据和代理网络隔离，不保证网站接受特定代理或账号。第三方组件遵循各自许可，详见架构与安全文档。
