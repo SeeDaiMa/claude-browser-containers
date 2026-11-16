@@ -1,0 +1,418 @@
+/*
+ * 侧栏布局：品牌 → 新建 → 主导航 → 实例列表（占满剩余高度）→ 底部状态。
+ * 基础的 .cm-side / .cm-nav-item 来自 components.css，这里只放侧栏专属样式。
+ */
+
+.cm-side.side {
+  gap: 0;
+  width: auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.side-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------- 品牌 ---------- */
+.side-brand {
+  display: flex;
+  flex: none;
+  gap: 10px;
+  align-items: center;
+  min-height: 44px;
+  margin-bottom: var(--space-4);
+  padding: 0 6px;
+}
+
+.side-brand > svg {
+  width: 26px;
+  height: 26px;
+  flex: none;
+}
+
+.side-brand__copy {
+  display: grid;
+  min-width: 0;
+}
+
+.side-brand__name {
+  color: var(--ink);
+  font: 700 15px/20px var(--font-display);
+  letter-spacing: -0.2px;
+  white-space: nowrap;
+}
+
+.side-brand__subtitle {
+  overflow: hidden;
+  color: var(--ink-muted);
+  font-size: 11px;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------- 新建与主导航 ---------- */
+.side-create {
+  flex: none;
+  justify-content: flex-start;
+  width: 100%;
+  min-height: 36px;
+  margin-bottom: var(--space-3);
+  padding: 0 10px;
+}
+
+.side-nav {
+  display: grid;
+  flex: none;
+  gap: 2px;
+}
+
+.side-nav .cm-nav-item {
+  height: 34px;
+  font-size: 13.5px;
+}
+
+/* ---------- 实例列表 ---------- */
+.side-instances {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 96px;
+  margin-top: var(--space-4);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border);
+}
+
+.side-section-title {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+  padding: 0 10px;
+  color: var(--ink-muted);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 18px;
+}
+
+.side-instances__list {
+  display: grid;
+  flex: 1 1 auto;
+  align-content: start;
+  gap: 2px;
+  min-height: 0;
+  margin: 0 -4px;
+  padding: 0 4px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+.side-instances__list:hover,
+.side-instances__list:focus-within {
+  scrollbar-color: var(--control-border) transparent;
+}
+
+.side-instance {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  column-gap: 10px;
+  align-items: center;
+  min-height: 44px;
+  padding: 6px 8px;
+  border-radius: var(--radius-md);
+  color: var(--text);
+  text-decoration: none;
+}
+
+.side-instance:hover {
+  background: var(--surface-3);
+}
+
+.side-instance[aria-current='page'] {
+  background: var(--primary-soft);
+}
+
+.side-instance__icon {
+  position: relative;
+  display: inline-flex;
+  grid-row: 1 / span 2;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink-muted);
+}
+
+.side-instance[aria-current='page'] .side-instance__icon {
+  border-color: transparent;
+  color: var(--primary-ink);
+}
+
+/* 状态角标叠在图标右下角，收起侧栏时仍能看到运行状态。 */
+.side-instance__badge {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 12px;
+  height: 12px;
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  box-shadow: 0 0 0 1px var(--border);
+}
+
+.side-instance__badge .cm-spin {
+  width: 9px;
+  height: 9px;
+}
+
+.side-instance__badge .cm-dot--tri {
+  border-right-width: 3px;
+  border-bottom-width: 5px;
+  border-left-width: 3px;
+}
+
+.side-instance__name {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.side-instance__state {
+  overflow: hidden;
+  font-size: 11px;
+  line-height: 15px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.side-instance__state.tone-neutral {
+  color: var(--ink-muted);
+}
+
+.side-empty {
+  margin: 0;
+  padding: 6px 10px;
+  color: var(--ink-muted);
+  font-size: 12px;
+  line-height: 19px;
+}
+
+/* ---------- 底部状态 ---------- */
+.side-footer {
+  display: grid;
+  flex: none;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+.side-status {
+  padding: 4px 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-tile);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.side-status__head {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  height: 30px;
+  padding: 0 8px;
+  border-radius: 8px;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.side-status__head:hover {
+  background: var(--surface-3);
+}
+
+.side-status__head > .side-label {
+  flex: 1;
+}
+
+.side-status__head > .cm-icon {
+  width: 13px;
+  height: 13px;
+  color: var(--ink-muted);
+}
+
+.side-status__metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 4px 0 0;
+  padding: 0 4px;
+}
+
+.side-status__metrics > div {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+  padding: 0 4px;
+}
+
+.side-status__metrics > div + div {
+  border-left: 1px solid var(--border);
+  padding-left: 8px;
+}
+
+.side-status__metrics dt {
+  color: var(--ink-muted);
+  font-size: 10.5px;
+  line-height: 15px;
+}
+
+.side-status__metrics dd {
+  overflow: hidden;
+  margin: 0;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.side-status__metrics dd > span {
+  color: var(--ink-muted);
+  font-weight: 400;
+}
+
+.side-meta {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 4px 0 8px;
+}
+
+.side-meta__info {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink-muted);
+  font-size: 11px;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+.side-meta__info > .cm-icon {
+  width: 12px;
+  height: 12px;
+  color: var(--primary-ink);
+}
+
+.side-theme {
+  flex: none;
+}
+
+.side-theme button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 24px;
+  padding: 0;
+}
+
+.side-theme .cm-icon {
+  width: 14px;
+  height: 14px;
+}
+
+.side-theme-toggle {
+  display: none;
+}
+
+/* ---------- 收起状态：只保留图标 ---------- */
+.is-collapsed .cm-side.side {
+  padding-right: 8px;
+  padding-left: 8px;
+}
+
+.is-collapsed .side-brand {
+  justify-content: center;
+  padding: 0;
+}
+
+.is-collapsed .side-brand__copy,
+.is-collapsed .side-label,
+.is-collapsed .cm-nav-item__count,
+.is-collapsed .side-section-title,
+.is-collapsed .side-instance__name,
+.is-collapsed .side-instance__state,
+.is-collapsed .side-empty,
+.is-collapsed .side-status__head > .cm-icon,
+.is-collapsed .side-status__metrics,
+.is-collapsed .side-meta__info,
+.is-collapsed .side-theme {
+  display: none;
+}
+
+.is-collapsed .side-create,
+.is-collapsed .cm-nav-item {
+  justify-content: center;
+  padding: 0;
+}
+
+.is-collapsed .side-instances {
+  min-height: 64px;
+}
+
+.is-collapsed .side-instance {
+  display: flex;
+  justify-content: center;
+  min-height: 40px;
+  padding: 4px 0;
+}
+
+.is-collapsed .side-status {
+  padding: 4px;
+}
+
+.is-collapsed .side-status__head {
+  justify-content: center;
+  padding: 0;
+}
+
+.is-collapsed .side-meta {
+  justify-content: center;
+  padding: 0;
+}
+
+.is-collapsed .side-theme-toggle {
+  display: inline-flex;
+}
+
+@media (max-height: 640px) {
+  .side-brand {
+    margin-bottom: var(--space-2);
+  }
+
+  .side-status__metrics {
+    display: none;
+  }
+}

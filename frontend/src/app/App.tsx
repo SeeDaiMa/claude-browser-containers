@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Link, NavLink, Route, Routes, useLocation } from 'react-router-dom'
+import { NavLink, Route, Routes, useLocation } from 'react-router-dom'
 import { CreatePage } from '../features/instances/pages/CreatePage'
 import { EditPage } from '../features/instances/pages/EditPage'
 import { ListPage } from '../features/instances/pages/ListPage'
@@ -7,11 +7,10 @@ import { TrashPage } from '../features/instances/pages/TrashPage'
 import { WorkspacePage } from '../features/instances/pages/WorkspacePage'
 import { SubscriptionsPage } from '../features/subscriptions/pages/SubscriptionsPage'
 import { SettingsPage } from '../features/settings/pages/SettingsPage'
-import { Button, ButtonLink, Empty, IconButton, Notice } from '../shared/ui/Controls'
-import { Icon, Logo, TONE_ICON, type IconName } from '../shared/ui/Icon'
-import { formatMemory } from '../shared/lib/format'
-import { isActive, isFinished, runState } from '../shared/model/status'
+import { Button, Empty, IconButton, Notice } from '../shared/ui/Controls'
+import { Icon, TONE_ICON } from '../shared/ui/Icon'
 import { ManagerProvider, useManager } from './ManagerProvider'
+import { Sidebar } from './Sidebar'
 
 export function App() {
   return (
@@ -22,20 +21,7 @@ export function App() {
 }
 
 function Shell() {
-  const {
-    data,
-    tasks,
-    subscriptions,
-    error,
-    refresh,
-    refreshing,
-    resolvedTheme,
-    setTheme,
-    toasts,
-    dismiss,
-    draft,
-    resetDraft,
-  } = useManager()
+  const { error, refresh, refreshing, toasts, dismiss } = useManager()
   const location = useLocation()
   const [collapsed, setCollapsed] = useState(() => window.innerWidth <= 1024)
   const content = useRef<HTMLElement>(null)
@@ -54,19 +40,6 @@ function Shell() {
       : location.pathname.endsWith('/edit')
         ? '编辑实例'
         : ''
-  const connected = !!data?.docker.ok && !error
-  const shortcutInstances = data?.instances.slice(0, 6) || []
-  const activeTasks = tasks.filter(isActive).length
-  const createTask = tasks.find((task) => task.id === draft.taskId)
-  const beginCreate = () => {
-    if (createTask && isFinished(createTask)) resetDraft()
-  }
-  const links: { to: string; label: string; icon: IconName; count?: number }[] = [
-    { to: '/', label: '实例', icon: 'inst', count: data?.instances.length },
-    { to: '/subscriptions', label: '代理库', icon: 'proxy', count: subscriptions.length },
-    { to: '/trash', label: '回收站', icon: 'trash', count: data?.trash.length },
-    { to: '/settings', label: '设置', icon: 'settings' },
-  ]
 
   useEffect(() => {
     content.current?.scrollTo(0, 0)
@@ -84,177 +57,7 @@ function Shell() {
         跳到主要内容
       </a>
       <div className={`app${collapsed ? ' is-collapsed' : ''}`}>
-        <aside className="cm-side side" aria-label="Claude 容器侧栏">
-          <div className="brand" title="Claude 容器">
-            <Logo />
-            <div className="brand-copy">
-              <span className="brand-name">Claude 容器</span>
-              <span className="brand-subtitle">独立浏览器工作空间</span>
-            </div>
-          </div>
-          {connected ? (
-            <ButtonLink
-              className="side-create"
-              to="/new"
-              icon="plus"
-              variant="tint-primary"
-              aria-label="新建实例"
-              onClick={beginCreate}
-            >
-              <span className="nav-label">新建实例</span>
-            </ButtonLink>
-          ) : (
-            <Button
-              className="side-create"
-              icon="plus"
-              variant="tint-primary"
-              aria-label="新建实例"
-              title="连接 Docker 后即可创建实例"
-              disabled
-            >
-              <span className="nav-label">新建实例</span>
-            </Button>
-          )}
-          <div className="side-section-title">工作空间</div>
-          <nav id="nav" aria-label="主导航">
-            {links.map((link) => (
-              <Link
-                key={link.to}
-                to={link.to}
-                title={link.label}
-                aria-label={link.label}
-                className="cm-nav-item"
-                aria-current={
-                  (link.to === '/' ? section === '实例' : location.pathname === link.to)
-                    ? 'page'
-                    : undefined
-                }
-              >
-                <Icon name={link.icon} />
-                <span className="nav-label">{link.label}</span>
-                {link.count !== undefined && (
-                  <span className="cm-nav-item__count">{link.count}</span>
-                )}
-              </Link>
-            ))}
-          </nav>
-          <section className="side-shortcuts" aria-label="实例快捷入口">
-            <div className="side-section-title">
-              <span>实例快捷入口</span>
-              <span>{data?.instances.length ?? '—'}</span>
-            </div>
-            <div className="side-instance-list">
-              {shortcutInstances.map((item) => {
-                const state = runState(item, tasks, connected)
-                const selected =
-                  location.pathname === `/instance/${item.id}` ||
-                  location.pathname === `/instance/${item.id}/edit`
-                return (
-                  <Link
-                    key={item.id}
-                    to={`/instance/${item.id}`}
-                    className="side-instance"
-                    aria-label={`打开实例：${item.display_name}`}
-                    aria-current={selected ? 'page' : undefined}
-                    title={`${item.display_name} · ${state.label}`}
-                  >
-                    <span className={`side-instance-icon tone-${state.tone}`}>
-                      <Icon name="inst" />
-                    </span>
-                    <span className="side-instance-copy">
-                      <strong>{item.display_name}</strong>
-                      <span>{state.label}</span>
-                    </span>
-                    <span className={`side-instance-state tone-${state.tone}`}>
-                      {state.spin ? (
-                        <span className="cm-spin" aria-hidden="true" />
-                      ) : (
-                        <span
-                          className={`cm-dot${state.dot ? ` cm-dot--${state.dot}` : ''}`}
-                          aria-hidden="true"
-                        />
-                      )}
-                    </span>
-                  </Link>
-                )
-              })}
-              {!data && <p className="side-empty">正在读取实例…</p>}
-              {data?.instances.length === 0 && (
-                <p className="side-empty">创建第一个实例，开始独立工作。</p>
-              )}
-            </div>
-            {data && data.instances.length > shortcutInstances.length && (
-              <Link className="side-all" to="/">
-                查看全部 {data.instances.length} 个实例
-                <Icon name="chevR" />
-              </Link>
-            )}
-          </section>
-          <section className="side-overview" aria-label="运行概况">
-            <div className="side-overview-heading">
-              <span>运行概况</span>
-              <Link to="/settings" title="查看运行环境" aria-label="查看运行环境">
-                <span className={`cm-dot ${connected ? 'tone-ok' : ''}`} />
-                {error || !data ? '状态未知' : data.docker.ok ? '已连接' : '未连接'}
-              </Link>
-            </div>
-            <dl>
-              <div>
-                <dt>运行中</dt>
-                <dd>
-                  {connected ? (data?.summary.running ?? '—') : '未知'}
-                  <span> / {data?.summary.total ?? '—'}</span>
-                </dd>
-              </div>
-              <div>
-                <dt>容器内存</dt>
-                <dd>{connected ? formatMemory(data?.summary.memory_total_mib) : '—'}</dd>
-              </div>
-              <div>
-                <dt>后台任务</dt>
-                <dd>{error ? '—' : activeTasks ? `${activeTasks} 个进行中` : '暂无任务'}</dd>
-              </div>
-            </dl>
-          </section>
-          <div className="side-appearance">
-            <span className="side-appearance-label">外观</span>
-            <div className="cm-seg side-theme-options" role="group" aria-label="侧栏主题">
-              <button
-                type="button"
-                aria-label="切换为浅色主题"
-                aria-pressed={resolvedTheme === 'light'}
-                onClick={() => setTheme('light')}
-              >
-                <Icon name="sun" />
-                日间
-              </button>
-              <button
-                type="button"
-                aria-label="切换为深色主题"
-                aria-pressed={resolvedTheme === 'dark'}
-                onClick={() => setTheme('dark')}
-              >
-                <Icon name="moon" />
-                夜间
-              </button>
-            </div>
-            <IconButton
-              className="side-theme-toggle"
-              icon={resolvedTheme === 'dark' ? 'sun' : 'moon'}
-              label={`切换为${resolvedTheme === 'dark' ? '浅色' : '深色'}主题`}
-              onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
-            />
-          </div>
-          <div className="side-foot">
-            <span>
-              <Icon name="shield" />
-              本机运行 · 数据独立保存
-            </span>
-            <span>
-              Claude 容器 <span className="cm-num">1.0.0</span>
-            </span>
-          </div>
-        </aside>
+        <Sidebar collapsed={collapsed} />
         <div className="main">
           <header className={`top${workspace ? ' is-ws' : ''}`}>
             <div className="top-left">

@@ -5,6 +5,7 @@ import { App } from './app/App'
 import './app/styles/tokens.css'
 import './app/styles/components.css'
 import './app/styles/app.css'
+import './app/styles/sidebar.css'
 
 createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

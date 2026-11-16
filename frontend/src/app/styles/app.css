@@ -24,32 +24,6 @@
         grid-template-columns: var(--sidebar-collapsed) minmax(0, 1fr);
     }
 
-    .cm-side.side {
-        width: auto;
-        min-height: 0;
-        overflow-y: auto;
-    }
-
-    .brand {
-        display: flex;
-        gap: 10px;
-        align-items: center;
-        height: 40px;
-        margin-bottom: var(--space-2);
-        padding: 0 6px;
-        color: var(--ink);
-        font-family: var(--font-display);
-        font-size: 15px;
-        font-weight: 600;
-        white-space: nowrap;
-    }
-
-    .brand svg {
-        width: 26px;
-        height: 26px;
-        flex: none;
-    }
-
     .logo-a {
         fill: var(--primary);
     }
@@ -60,27 +34,6 @@
 
     .logo-c {
         fill: var(--border-strong);
-    }
-
-    .is-collapsed .nav-label,
-    .is-collapsed .brand-name,
-    .is-collapsed .cm-nav-item__count,
-    .is-collapsed .side-foot {
-        display: none;
-    }
-
-    .is-collapsed .cm-nav-item,
-    .is-collapsed .brand {
-        justify-content: center;
-        padding: 0;
-    }
-
-    .side-foot {
-        margin-top: auto;
-        padding: var(--space-2) 6px;
-        color: var(--ink-muted);
-        font-size: 12px;
-        line-height: 18px;
     }
 
     .main {
@@ -1046,7 +999,6 @@ button, a, input { -webkit-tap-highlight-color: transparent; }
 .top-title { color: var(--ink); font: 600 15px/22px var(--font-display); white-space: nowrap; }
 .top-ws:empty { display: none; }
 .top:not(.is-ws) .top-ws { display: none; }
-.cm-nav-item[aria-current='page'] { background: var(--primary-soft); color: var(--primary-ink); font-weight: 600; }
 .skip-link { position: fixed; z-index: 100; top: 8px; left: 8px; padding: 8px 14px; background: var(--surface); border: 2px solid var(--focus-ring); border-radius: var(--radius-md); transform: translateY(-150%); }
 .skip-link:focus { transform: translateY(0); }
 .content:focus { outline: none; }
@@ -1160,7 +1112,6 @@ button, a, input { -webkit-tap-highlight-color: transparent; }
 }
 @media (max-width: 1024px) {
   .content { padding: var(--space-6); }
-  .is-collapsed .cm-side { padding-left: 8px; padding-right: 8px; }
   .top-ws .ws-actions { gap: 2px; }
 }
 @media (max-width: 768px) {
@@ -1218,69 +1169,6 @@ button, a, input { -webkit-tap-highlight-color: transparent; }
 .pg { grid-template-columns: minmax(0, 1fr); }
 .pg > *, .wz > * { min-width: 0; }
 .cm-table-wrap { width: 100%; min-width: 0; }
-
-/* 侧栏：常用操作、实例入口和实时概况共用已有管理台数据。 */
-.cm-side.side { gap: 0; }
-.cm-side.side > :not(.side-shortcuts) { flex-shrink: 0; }
-.brand { height: auto; min-height: 56px; margin: 0 0 12px; gap: 12px; }
-.brand > svg { width: 28px; height: 28px; }
-.brand-copy { display: grid; gap: 1px; min-width: 0; }
-.brand-name { color: var(--ink); font-size: 17px; font-weight: 700; letter-spacing: -0.3px; }
-.brand-subtitle { color: var(--ink-muted); font: 400 11px/18px var(--font-sans); }
-.side-create { width: 100%; min-height: 36px; justify-content: flex-start; padding: 0 12px; margin-bottom: 18px; }
-.side-section-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 10px; margin-bottom: 8px; color: var(--ink-muted); font-size: 11px; font-weight: 500; line-height: 18px; }
-.side-shortcuts { display: flex; flex: 0 1 auto; flex-direction: column; min-height: 78px; margin: 22px 0 20px; }
-.side-shortcuts > .side-section-title, .side-all { flex: none; }
-.side-instance-list { display: grid; flex: 0 1 auto; align-content: start; gap: 3px; min-height: 0; max-height: 312px; overflow-y: auto; overscroll-behavior: contain; }
-.side-instance { display: flex; align-items: center; gap: 10px; min-height: 52px; padding: 7px 10px; border-radius: var(--radius-md); color: var(--text); text-decoration: none; }
-.side-instance:hover { background: var(--surface-3); }
-.side-instance[aria-current='page'] { background: var(--primary-soft); }
-.side-instance-icon { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; flex: none; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); color: var(--ink-muted); }
-.side-instance[aria-current='page'] .side-instance-icon { color: var(--primary-ink); border-color: transparent; }
-.side-instance-copy { display: grid; flex: 1; gap: 1px; min-width: 0; }
-.side-instance-copy strong { overflow: hidden; color: var(--ink); font-size: 13px; font-weight: 500; line-height: 19px; text-overflow: ellipsis; white-space: nowrap; }
-.side-instance-copy > span { overflow: hidden; color: var(--ink-muted); font-size: 11px; line-height: 16px; text-overflow: ellipsis; white-space: nowrap; }
-.side-instance-state { display: inline-flex; flex: none; color: var(--ink-muted); }
-.side-instance-state .cm-spin { width: 11px; height: 11px; }
-.side-instance-state.tone-ok { color: var(--success); }
-.side-instance-state.tone-info { color: var(--info); }
-.side-instance-state.tone-warn { color: var(--warning); }
-.side-instance-state.tone-danger { color: var(--danger); }
-.side-empty { margin: 0; padding: 8px 10px; color: var(--ink-muted); font-size: 12px; line-height: 19px; }
-.side-all { display: flex; align-items: center; justify-content: space-between; margin: 6px 0 0; padding: 4px 10px; border-radius: var(--radius-md); color: var(--primary-ink); font-size: 12px; text-decoration: none; }
-.side-all:hover { background: var(--primary-soft); }
-.side-all .cm-icon { width: 13px; height: 13px; }
-.side-overview { flex: none; margin: auto 0 12px; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius-tile); background: var(--surface); box-shadow: var(--shadow-sm); }
-.side-overview-heading { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 12px; color: var(--ink); font-size: 12px; font-weight: 600; }
-.side-overview-heading a { display: inline-flex; align-items: center; gap: 5px; padding: 2px 5px; border-radius: var(--radius-sm); color: var(--ink-muted); font-size: 10.5px; font-weight: 400; text-decoration: none; }
-.side-overview-heading a:hover { background: var(--surface-3); }
-.side-overview dl { display: grid; gap: 9px; margin: 0; font-size: 12px; line-height: 18px; }
-.side-overview dl > div { display: flex; justify-content: space-between; gap: 10px; }
-.side-overview dt { color: var(--ink-muted); }
-.side-overview dd { margin: 0; color: var(--ink); font-variant-numeric: tabular-nums; }
-.side-overview dd > span { color: var(--ink-muted); }
-.side-foot { display: grid; flex: none; gap: 4px; margin-top: 2px; padding: 14px 10px 0; border-top: 1px solid var(--border); font-size: 10.5px; line-height: 17px; }
-.side-foot > span { display: flex; align-items: center; gap: 5px; }
-.side-foot .cm-icon { width: 12px; height: 12px; color: var(--primary-ink); }
-.is-collapsed .brand-copy, .is-collapsed .side-section-title, .is-collapsed .side-instance-copy, .is-collapsed .side-instance-state, .is-collapsed .side-all, .is-collapsed .side-empty, .is-collapsed .side-overview { display: none; }
-.is-collapsed .side-create { justify-content: center; padding: 0; margin-bottom: 12px; }
-.is-collapsed .side-shortcuts { min-height: 64px; margin-top: 16px; margin-bottom: 0; padding-top: 12px; border-top: 1px solid var(--border); }
-.is-collapsed .side-instance { justify-content: center; min-height: 40px; padding: 4px 0; }
-.is-collapsed .side-instance-icon { width: 30px; height: 30px; }
-@media (max-height: 720px) {
-  .side-shortcuts { margin-top: 14px; }
-  .side-instance-list { max-height: 156px; }
-}
-
-/* 外观切换放在侧栏底部；侧栏收起时保留一个切换图标。 */
-.side-appearance { display: flex; flex: none; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 10px 14px; }
-.side-appearance-label { color: var(--ink-muted); font-size: 12px; }
-.side-theme-options button { display: inline-flex; align-items: center; justify-content: center; gap: 4px; padding: 0 9px; font-size: 12px; }
-.side-theme-options .cm-icon { width: 14px; height: 14px; }
-.side-theme-toggle { display: none; }
-.is-collapsed .side-appearance { justify-content: center; margin-top: auto; padding: 12px 0 0; }
-.is-collapsed .side-appearance-label, .is-collapsed .side-theme-options { display: none; }
-.is-collapsed .side-theme-toggle { display: inline-flex; }
 
 /* 实例选择器中的运行状态：文字与形状共同表达，其他下拉框保持普通样式。 */
 .cm-select-btn__label { display: flex; flex: 1; align-items: center; gap: 8px; min-width: 0; }
