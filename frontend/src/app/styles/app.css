@@ -89,7 +89,6 @@
         flex: 1;
     }
 
-
     .content {
         flex: 1;
         min-height: 0;
@@ -550,31 +549,6 @@
         line-height: 18px;
     }
 
-    .demo-box {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 8px 16px;
-        align-items: center;
-        padding: 10px var(--space-3);
-        border: 1px dashed var(--border-strong);
-        border-radius: var(--radius-md);
-        color: var(--ink-muted);
-        font-size: 12.5px;
-    }
-
-    .demo-box label {
-        display: inline-flex;
-        gap: 6px;
-        align-items: center;
-        color: var(--ink);
-        cursor: pointer;
-    }
-
-    .demo-box input {
-        margin: 0;
-        accent-color: var(--primary);
-    }
-
     .ws {
         display: flex;
         flex: 1;
@@ -605,8 +579,7 @@
     }
 
     .top-ws:empty,
-    .top.is-ws .top-spacer,
-    .top.is-ws .proto-text {
+    .top.is-ws .top-spacer {
         display: none;
     }
 
@@ -633,11 +606,6 @@
     .top-ws .ws-kv .cm-kv span:last-child {
         overflow: hidden;
         text-overflow: ellipsis;
-    }
-
-    .ws-notice {
-        display: grid;
-        gap: 8px;
     }
 
     .cm-card.ws-info {
@@ -692,7 +660,6 @@
         }
     }
 
-
     .ws-stage {
         position: relative;
         display: flex;
@@ -726,131 +693,6 @@
         box-shadow: 0 0 0 2px var(--danger-soft);
     }
 
-
-
-
-
-
-    .comp {
-        display: grid;
-        gap: 2px;
-        padding: 8px 0;
-        border-top: 1px solid var(--border);
-        font-size: 12.5px;
-        line-height: 19px;
-    }
-
-    .addr-btn {
-        width: 28px;
-        height: 28px;
-    }
-
-    .mock {
-        max-width: 920px;
-        margin: 0 auto;
-        padding: var(--space-6) 28px;
-        color: var(--ink);
-    }
-
-    .mock-h {
-        display: flex;
-        gap: var(--space-5);
-        align-items: center;
-        padding-bottom: 14px;
-        border-bottom: 1px solid var(--border);
-    }
-
-    .mock-logo {
-        width: 28px;
-        height: 28px;
-        border-radius: var(--radius-md);
-        background: var(--primary-soft);
-    }
-
-    .mock-nav {
-        display: flex;
-        gap: var(--space-4);
-        color: var(--ink-muted);
-        font-size: 13px;
-    }
-
-    .mock-grid {
-        display: grid;
-        grid-template-columns: 2fr 1fr;
-        gap: var(--space-5);
-        margin-top: var(--space-5);
-    }
-
-    .mock-card {
-        padding: var(--space-4);
-        border: 1px solid var(--border);
-        border-radius: var(--radius-lg);
-    }
-
-    .mock-card h3 {
-        margin: 0 0 6px;
-        font-size: 15px;
-    }
-
-    .bar {
-        height: 10px;
-        margin: 9px 0;
-        border-radius: var(--radius-sm);
-        background: var(--surface-2);
-    }
-
-    .mock-note {
-        display: grid;
-        gap: 6px;
-        margin-top: var(--space-5);
-    }
-
-    .mock-note textarea {
-        box-sizing: border-box;
-        width: 100%;
-        min-height: 72px;
-        padding: 8px 10px;
-        border: 1px solid var(--border-strong);
-        border-radius: var(--radius-md);
-        background: var(--surface);
-        color: var(--ink);
-        font: inherit;
-        resize: vertical;
-    }
-
-    .mock-err {
-        display: grid;
-        justify-items: start;
-        gap: var(--space-2);
-        max-width: 520px;
-        margin: 80px auto;
-        padding: 0 var(--space-6);
-    }
-
-    .bdlg-wrap {
-        position: absolute;
-        inset: 0;
-        display: grid;
-        place-items: start center;
-        padding-top: 48px;
-        background: var(--scrim);
-    }
-
-    .bdlg {
-        display: grid;
-        gap: var(--space-3);
-        width: 400px;
-        padding: 18px var(--space-5);
-        border-radius: var(--radius-lg);
-        background: var(--surface);
-        box-shadow: var(--shadow-pop);
-    }
-
-    .bdlg h4 {
-        margin: 0;
-        font-size: 15px;
-    }
-
     .overlay-card {
         display: grid;
         justify-items: center;
@@ -875,32 +717,6 @@
         flex-wrap: wrap;
         gap: var(--space-3);
         align-items: center;
-    }
-
-    .user-list {
-        display: grid;
-        gap: 6px;
-        margin: 0;
-        padding: 0;
-        list-style: none;
-    }
-
-    .user-list li {
-        display: flex;
-        gap: var(--space-2);
-        align-items: center;
-        justify-content: space-between;
-        padding: 8px 10px;
-        border: 1px solid var(--border);
-        border-radius: var(--radius-md);
-    }
-
-    .del-list {
-        margin: 0;
-        padding-left: 18px;
-        color: var(--ink);
-        font-size: 13.5px;
-        line-height: 22px;
     }
 
     .settings {
@@ -935,20 +751,6 @@
         line-height: 22px;
     }
 
-    .scen-row {
-        display: flex;
-        flex-wrap: wrap;
-        gap: var(--space-3);
-        align-items: center;
-        justify-content: space-between;
-        padding: 10px 0;
-        border-bottom: 1px dashed var(--border);
-    }
-
-    .scen-row:last-child {
-        border-bottom: 0;
-    }
-
     .paths {
         display: grid;
         gap: 6px;
@@ -958,34 +760,15 @@
         line-height: 21px;
     }
 
-    .success-big {
-        display: grid;
-        justify-items: center;
-        gap: var(--space-2);
-        padding: var(--space-6) 0 var(--space-2);
-        text-align: center;
-    }
-
-    .success-big .cm-icon {
-        width: 40px;
-        height: 40px;
-        color: var(--success);
-    }
-
     @media (max-width: 1180px) {
         .metrics {
             grid-template-columns: repeat(2, minmax(0, 1fr));
-        }
-
-        .proto-long {
-            display: none;
         }
 
         .settings {
             grid-template-columns: minmax(0, 1fr);
         }
     }
-
 
 /* React 接入：复用原型的布局、表面和控件。 */
 * { box-sizing: border-box; }
@@ -1020,7 +803,6 @@ button, a, input { -webkit-tap-highlight-color: transparent; }
 .tone-warn { color: var(--warning); }
 .tone-danger { color: var(--danger); }
 .tone-info { color: var(--info); }
-.break-word { overflow-wrap: anywhere; }
 .long-copy { max-width: 280px; overflow-wrap: anywhere; }
 .loading-state { display: flex; align-items: center; justify-content: center; gap: 10px; min-height: 180px; color: var(--ink-muted); }
 .connection-error { margin-bottom: var(--space-4); }
@@ -1090,10 +872,6 @@ button, a, input { -webkit-tap-highlight-color: transparent; }
 .ws-kv .cm-kv { max-width: 210px; }
 .ws-stage { min-height: 0; }
 .cm-browser { min-height: 0; }
-.cm-browser__bar { flex: none; }
-.cm-browser__bar > .cm-icon-btn { width: 28px; height: 28px; }
-.cm-browser__addr { min-width: 0; }
-.cm-browser__addr > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .real-browser-view { display: flex; flex: 1; min-height: 0; position: relative; overflow: hidden; background: var(--canvas); }
 .real-browser-view iframe { position: absolute; inset: 0; display: block; border: 0; width: 100%; height: 100%; min-height: 0; background: var(--canvas); }
 .workspace-fullscreen-exit { position: absolute; top: 8px; right: 8px; z-index: 3; background: var(--glass); box-shadow: var(--shadow-control); }
@@ -1124,8 +902,6 @@ button, a, input { -webkit-tap-highlight-color: transparent; }
   .workspace-mobile-tools { display: flex; flex: none; gap: 6px; flex-wrap: wrap; align-items: center; padding: 8px; }
   .workspace-mobile-tools .cm-status { display: flex; flex-wrap: wrap; }
   .cm-grid-2 { grid-template-columns: 1fr; }
-  .cm-steps { flex-wrap: wrap; }
-  .cm-steps li + li::before { width: 14px; }
   .wz-head { align-items: start; }
   .foot .note { flex-basis: 100%; }
   .cm-diag { grid-template-columns: 1fr; }
@@ -1148,15 +924,11 @@ button, a, input { -webkit-tap-highlight-color: transparent; }
   .name-editor > .cm-btn { justify-self: start; }
   .cm-node__meta { overflow-wrap: anywhere; }
   .cm-node { grid-template-columns: 16px minmax(0, 1fr); row-gap: 6px; padding: 10px 12px; }
-  .cm-browser__tag { display: none; }
   .top-ws { gap: 4px; }
   .top-ws .cm-select-btn { width: min(140px, 32vw); }
   .top-ws > .cm-icon-btn { display: none; }
   .top-left .crumb { display: none; }
   .cm-card.ws-info { right: 8px; width: min(360px, calc(100vw - 80px)); }
-  .cm-steps { gap: 6px; }
-  .cm-steps li { font-size: 12px; gap: 5px; }
-  .cm-steps li + li::before { display: none; }
   .cm-seg button { padding: 0 10px; }
 }
 @media (prefers-reduced-motion: reduce) {

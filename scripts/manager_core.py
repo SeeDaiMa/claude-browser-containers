@@ -213,14 +213,6 @@ def cancel_task(task_id):
     return public_task(task)
 
 
-def mark_interrupted():
-    with _GUARD:
-        for task in _TASKS.values():
-            if task['state'] in ('queued', 'running'):
-                task['state'] = 'interrupted'
-                task['error'] = '管理台重启，任务已中断，没有自动重做。'
-
-
 def ensure_worker():
     global _WORKER, _NODE_TEST_WORKER, _SUBSCRIPTION_WORKER
     _load_tasks()
@@ -279,7 +271,7 @@ def _load_tasks():
         if _TASKS:
             return
     try:
-        saved = json_load(path)
+        saved = json.loads(path.read_text())
     except (OSError, UnicodeError, ValueError):
         _preserve_damaged_record(path)
         return
@@ -325,11 +317,6 @@ def _persist_tasks():
                 'requested_instance_id': task.get('requested_instance_id', task.get('instance_id', '')),
             } for task in (_TASKS[task_id] for task_id in _ORDER if task_id in _TASKS)]
         store._save(store.PRIVATE / 'tasks.json', payload)
-
-
-def json_load(path):
-    import json
-    return json.loads(path.read_text())
 
 
 def _worker(task_queue=None):
@@ -683,10 +670,6 @@ def reconfirm_node(instance_id):
     return {'ok': True, 'node': name, 'detail': '已重新确认同名节点，下次启动生效。'}
 
 
-def docker_report():
-    return runtime_snapshot()['docker']
-
-
 def container_map():
     return runtime_snapshot()['containers']
 
@@ -800,7 +783,6 @@ _VM_MARKERS = ('com.docker.virtualization', 'com.apple.Virtualization.VirtualMac
 def _host_memory():
     """分开虚拟机和 Docker 辅助进程。读不到就留空，不用别的数字代替。"""
     try:
-        import subprocess
         output = subprocess.run(['ps', '-axo', 'rss=,comm='], text=True, capture_output=True, check=False).stdout
     except OSError:
         return {'docker_vm_rss_mib': None, 'docker_helper_rss_mib': None}
@@ -1018,7 +1000,6 @@ def _diagnostics(slug, containers, health=None):
 
 def _self_rss():
     try:
-        import subprocess
         output = subprocess.run(['ps', '-o', 'rss=', '-p', str(os.getpid())], text=True, capture_output=True, check=False).stdout
         return round(int(output.strip()) / 1024, 1)
     except (OSError, ValueError):

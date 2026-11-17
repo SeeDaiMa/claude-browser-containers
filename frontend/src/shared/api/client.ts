@@ -150,7 +150,6 @@ export const api = {
   settings: () => request<Settings>('/api/settings'),
   overview: () => request<Overview>('/api/instances'),
   tasks: () => request<{ tasks: Task[] }>('/api/tasks'),
-  task: (id: string) => request<Task>(`/api/tasks/${id}`),
   subscriptions: () => request<{ subscriptions: Subscription[] }>('/api/subscriptions'),
   nodes: (id: string) => request<{ nodes: NodeRow[] }>(`/api/subscriptions/${id}/nodes`),
   testNodes: (id: string, node_ids: string[]) =>
@@ -223,30 +222,4 @@ export const api = {
       headers,
       body: '{}',
     }),
-}
-
-export async function waitForTask(task: Task): Promise<Task> {
-  let current = task
-  for (
-    let attempt = 0;
-    attempt < 160 && !['succeeded', 'failed', 'interrupted'].includes(current.state);
-    attempt += 1
-  ) {
-    await new Promise((resolve) => window.setTimeout(resolve, 250))
-    current = await api.task(current.id)
-  }
-  return current
-}
-
-export function runtimeLabel(state: Instance['runtime']) {
-  return { running: '运行中', stopped: '已停止', degraded: '部分运行', unknown: '状态未知' }[state]
-}
-
-export function formatMib(value: number | null) {
-  return value === null ? '—' : `${value} MiB`
-}
-
-export function formatWhen(value: string | null | undefined) {
-  if (!value) return '未检测'
-  return new Date(value).toLocaleString()
 }

@@ -13,7 +13,6 @@ from fastapi.staticfiles import StaticFiles
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'scripts'))
 
-import catalog
 import manager_core
 import store
 import cbc

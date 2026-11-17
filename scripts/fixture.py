@@ -8,7 +8,6 @@ import socket
 import socketserver
 import ssl
 import struct
-import sys
 import threading
 
 CONFIG = json.load(open('/settings/fixture.json'))
