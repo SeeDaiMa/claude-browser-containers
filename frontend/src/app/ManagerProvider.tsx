@@ -50,6 +50,11 @@ const ACTION_NAMES: Record<string, string> = {
   recover: '恢复原节点',
 }
 
+/** 轮询结果与当前内容相同就沿用旧对象，React 不会因此重渲染整个管理台。 */
+function keepIfSame<T>(previous: T, next: T): T {
+  return JSON.stringify(previous) === JSON.stringify(next) ? previous : next
+}
+
 function savedTheme(): Theme {
   try {
     const value = localStorage.getItem('cbc-theme')
@@ -115,10 +120,11 @@ export function ManagerProvider({ children }: { children: ReactNode }) {
     setToasts((items) => [...items.slice(-2), notice])
   }, [])
 
-  const refresh = useCallback(async () => {
+  // 后台轮询不切换 refreshing，刷新按钮只在用户手动刷新时显示忙碌。
+  const load = useCallback(async (showBusy: boolean) => {
     if (polling.current) return
     polling.current = true
-    setRefreshing(true)
+    if (showBusy) setRefreshing(true)
     try {
       const results = await Promise.allSettled([api.overview(), api.tasks(), api.subscriptions()])
       const [overview, taskList, subscriptionList] = results
@@ -132,7 +138,7 @@ export function ManagerProvider({ children }: { children: ReactNode }) {
               : item,
           ),
         }
-        setData(latest)
+        setData((current) => keepIfSame(current, latest))
         for (const item of latest.instances) {
           const state = item.monitor?.state || ''
           const previous = healthSeen.current.get(item.id)
@@ -151,8 +157,10 @@ export function ManagerProvider({ children }: { children: ReactNode }) {
           healthSeen.current.set(item.id, { state, changeId: item.exit?.change_id })
         }
       }
-      if (subscriptionList.status === 'fulfilled')
-        setSubscriptions(subscriptionList.value.subscriptions)
+      if (subscriptionList.status === 'fulfilled') {
+        const incoming = subscriptionList.value.subscriptions
+        setSubscriptions((current) => keepIfSame(current, incoming))
+      }
       if (taskList.status === 'fulfilled') {
         for (const task of taskList.value.tasks) {
           const previous = seen.current.get(task.id)
@@ -170,7 +178,7 @@ export function ManagerProvider({ children }: { children: ReactNode }) {
         incoming.forEach((task) => unconfirmedTasks.current.delete(task.id))
         const merged = [...incoming, ...unconfirmedTasks.current.values()]
         hasActiveTasks.current = merged.some(isActive)
-        setTasks(merged)
+        setTasks((current) => keepIfSame(current, merged))
       }
       const failed = results.find((result) => result.status === 'rejected')
       setError(
@@ -182,9 +190,10 @@ export function ManagerProvider({ children }: { children: ReactNode }) {
       )
     } finally {
       polling.current = false
-      setRefreshing(false)
+      if (showBusy) setRefreshing(false)
     }
   }, [notify])
+  const refresh = useCallback(() => load(true), [load])
 
   async function dismissExitChange(id: string, changeId: string) {
     const exit = await api.dismissExitChange(id, changeId)
@@ -204,7 +213,7 @@ export function ManagerProvider({ children }: { children: ReactNode }) {
     const poll = async () => {
       if (running || cancelled) return
       running = true
-      await refresh()
+      await load(false)
       running = false
       if (cancelled) return
       timer = window.setTimeout(
@@ -225,7 +234,7 @@ export function ManagerProvider({ children }: { children: ReactNode }) {
       window.clearTimeout(timer)
       document.removeEventListener('visibilitychange', visible)
     }
-  }, [refresh])
+  }, [load])
 
   useEffect(() => {
     document.documentElement.dataset.theme = resolvedTheme
@@ -261,7 +270,7 @@ export function ManagerProvider({ children }: { children: ReactNode }) {
       seen.current.set(task.id, task.state)
       unconfirmedTasks.current.set(task.id, task)
       setTasks((items) => [task, ...items.filter((item) => item.id !== task.id)])
-      void refresh()
+      void load(false)
       return task
     } finally {
       locks.current.delete(key)

@@ -169,6 +169,45 @@ def load_cached_nodes(subscription_id):
     return nodes if isinstance(nodes, list) else []
 
 
+_NODE_SUMMARIES = {}
+_NODE_SUMMARIES_GUARD = threading.Lock()
+
+
+def _node_summary(subscription_id):
+    """轮询只需要节点数量、编号和最近检测时间，不必每次解析完整节点缓存。
+
+    缓存按文件的 inode、修改时间和大小失效。节点缓存都经 os.replace 整体替换，
+    任何写入都会换掉 inode，因此不会读到旧摘要。返回值只读，调用方不得修改。
+    """
+    path = _cache_path(subscription_id)
+    try:
+        stat = path.stat()
+    except FileNotFoundError:
+        with _NODE_SUMMARIES_GUARD:
+            _NODE_SUMMARIES.pop(path, None)
+        return {'count': 0, 'ids': frozenset(), 'tested_at': None, 'quality_checked_at': None}
+    signature = (stat.st_ino, stat.st_mtime_ns, stat.st_size)
+    with _NODE_SUMMARIES_GUARD:
+        cached = _NODE_SUMMARIES.get(path)
+    if cached and cached[0] == signature:
+        return cached[1]
+    # 先取文件状态再读内容：若期间文件被替换，下次状态不一致会重新读取，不会长期留下旧摘要。
+    nodes = load_cached_nodes(subscription_id)
+    summary = {
+        'count': len(nodes),
+        'ids': frozenset(item.get('id') for item in nodes if isinstance(item, dict)),
+        'tested_at': max(
+            ((node.get('test') or {}).get('checked_at', '') for node in nodes), default=''
+        ) or None,
+        'quality_checked_at': max(
+            ((node.get('quality') or {}).get('checked_at', '') for node in nodes), default=''
+        ) or None,
+    }
+    with _NODE_SUMMARIES_GUARD:
+        _NODE_SUMMARIES[path] = (signature, summary)
+    return summary
+
+
 def _store_nodes(subscription_id, raw_nodes):
     previous = {item['id']: item for item in load_cached_nodes(subscription_id)}
     stored = []
@@ -358,7 +397,7 @@ def proxy_public(slug):
             if sub['id'] == subscription_id:
                 subscription_name = sub.get('name', '')
                 break
-        if node_id and not any(item.get('id') == node_id for item in load_cached_nodes(subscription_id)):
+        if node_id and node_id not in _node_summary(subscription_id)['ids']:
             stale = True
             label = label or '节点需要重新确认'
     if not manual and not label and not node_id:
@@ -376,8 +415,9 @@ def proxy_public(slug):
 
 def node_users():
     users = {}
+    selection = selection_map()
     for row in _instances_on_disk():
-        record = selection_map().get(row['slug']) or {}
+        record = selection.get(row['slug']) or {}
         node_id = record.get('node_id') if isinstance(record, dict) else ''
         if not node_id:
             continue
@@ -406,13 +446,13 @@ def public_nodes(subscription_id):
 def public_subscriptions():
     rows = []
     for sub in load_library()['subscriptions']:
-        nodes = load_cached_nodes(sub['id'])
+        summary = _node_summary(sub['id'])
         rows.append({
             'id': sub['id'],
             'name': sub.get('name', ''),
-            'node_count': len(nodes),
-            'nodes_tested_at': max(((node.get('test') or {}).get('checked_at', '') for node in nodes), default='') or None,
-            'nodes_quality_checked_at': max(((node.get('quality') or {}).get('checked_at', '') for node in nodes), default='') or None,
+            'node_count': summary['count'],
+            'nodes_tested_at': summary['tested_at'],
+            'nodes_quality_checked_at': summary['quality_checked_at'],
             'updated_at': sub.get('updated_at'),
             'last_error': sub.get('last_error', ''),
         })
