@@ -1,4 +1,5 @@
 """noVNC 启动保护的隔离回归，不访问 Docker 或真实实例。"""
+
 import os
 import re
 from pathlib import Path
@@ -26,22 +27,27 @@ def run_guard(root, port='5898', site=SITE, vnc=VNC):
         (nginx / 'include/vnc.conf').write_text(vnc)
     script = root / 'access.sh'
     script.write_text(GUARD.read_text().replace('/opt/base/etc/nginx', str(nginx)))
-    result = subprocess.run(['sh', str(script)], env={**os.environ, 'CBC_WEB_PORT': port},
-                            capture_output=True, text=True)
+    result = subprocess.run(
+        ['sh', str(script)], env={**os.environ, 'CBC_WEB_PORT': port}, capture_output=True, text=True
+    )
     return result, (nginx / 'default_site.conf').read_text(), (nginx / 'include/vnc.conf').read_text()
 
 
 def test_access_guard_changes_browser_revision(isolated):
     instance(isolated)
-    cbc.save_json(isolated / 'images.lock.json', {
-        'browser': {'reference': 'browser-fixture'}, 'network': {'reference': 'network-fixture'},
-    })
+    cbc.save_json(
+        isolated / 'images.lock.json',
+        {
+            'browser': {'reference': 'browser-fixture'},
+            'network': {'reference': 'network-fixture'},
+        },
+    )
     shutil.copy2(PROJECT / 'compose.yaml', isolated / 'compose.yaml')
-    sources = '''chromium-params.sh chromium-policy.json seccomp-chromium.json
+    sources = """chromium-params.sh chromium-policy.json seccomp-chromium.json
         novnc-clipboard-focus.sh novnc-keyboard-shortcuts.sh novnc-native-cursor.sh
         novnc-hidpi.sh novnc-ime.sh novnc-ime.js novnc-clipboard-image.sh
         cbc-clipboard-image.nginx.conf cbc-clipboard-image-run.sh
-        bin/cbc-clipboard-image cbc-clipboard-image.c'''.split()
+        bin/cbc-clipboard-image cbc-clipboard-image.c""".split()
     for name in sources:
         target = cbc.CONFIGS / name
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -95,8 +101,9 @@ def clipboard_allows(method, origin, host='127.0.0.1:5898'):
     text = CLIPBOARD.read_text()
     template = re.search(r'set \$cbc_clipboard_request "([^"]+)";', text).group(1)
     pattern = re.search(r'if \(\$cbc_clipboard_request !~\* "([^"]+)"\)', text).group(1)
-    request = (template.replace('$request_method', method)
-               .replace('$http_origin', origin or '').replace('$http_host', host))
+    request = (
+        template.replace('$request_method', method).replace('$http_origin', origin or '').replace('$http_host', host)
+    )
     return re.search(pattern, request, re.IGNORECASE) is not None
 
 
@@ -113,11 +120,19 @@ def test_clipboard_accepts_own_page_post_and_status_poll(host):
     assert clipboard_allows('GET', None, host)
 
 
-@pytest.mark.parametrize('origin', [
-    None, 'null', 'http://attacker.example.test', 'http://127.0.0.1:5790',
-    'http://localhost:5898', 'http://127.0.0.1:5898/', 'http://127.0.0.1:58989',
-    'http://127.0.0.1:5898 http://127.0.0.1:5898',
-])
+@pytest.mark.parametrize(
+    'origin',
+    [
+        None,
+        'null',
+        'http://attacker.example.test',
+        'http://127.0.0.1:5790',
+        'http://localhost:5898',
+        'http://127.0.0.1:5898/',
+        'http://127.0.0.1:58989',
+        'http://127.0.0.1:5898 http://127.0.0.1:5898',
+    ],
+)
 def test_clipboard_rejects_post_from_other_origins(origin):
     assert not clipboard_allows('POST', origin)
 

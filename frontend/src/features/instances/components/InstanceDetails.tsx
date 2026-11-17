@@ -32,7 +32,8 @@ export function InstanceDetails({
           onKeyDown={(event) => {
             if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
             event.preventDefault()
-            const next = event.key === 'Home' ? 0 : event.key === 'End' ? 1 : tab === 'diagnostics' ? 1 : 0
+            const next =
+              event.key === 'Home' ? 0 : event.key === 'End' ? 1 : tab === 'diagnostics' ? 1 : 0
             onTabChange(TABS[next].id)
             event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus()
           }}
@@ -50,7 +51,11 @@ export function InstanceDetails({
               onClick={() => onTabChange(option.id)}
             >
               {option.label}
-              {option.id === 'ip' && count > 0 && <span className="instance-detail__count" aria-hidden="true">{count}</span>}
+              {option.id === 'ip' && count > 0 && (
+                <span className="instance-detail__count" aria-hidden="true">
+                  {count}
+                </span>
+              )}
             </button>
           ))}
         </div>

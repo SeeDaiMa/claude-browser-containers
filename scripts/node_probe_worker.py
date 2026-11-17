@@ -1,4 +1,5 @@
 """通过 stdin 接收私有节点配置；仅在临时网络容器内运行，stdout 只返回公开测速结果。"""
+
 from concurrent.futures import ThreadPoolExecutor
 import ipaddress
 import json
@@ -22,8 +23,15 @@ MAX_RESPONSE_BYTES = 64 * 1024
 
 
 def quality_failed(detail):
-    return {'status': 'failed', 'ip': None, 'asn': None, 'is_residential': None,
-            'is_broadcast': None, 'fraud_score': None, 'detail': detail}
+    return {
+        'status': 'failed',
+        'ip': None,
+        'asn': None,
+        'is_residential': None,
+        'is_broadcast': None,
+        'fraud_score': None,
+        'detail': detail,
+    }
 
 
 def normalize_quality(payload):
@@ -43,8 +51,12 @@ def normalize_quality(payload):
     asn = asn if type(asn) is int and 0 < asn <= 4294967295 else None
     complete = all(value is not None for value in (score, residential, broadcast))
     return {
-        'status': 'ok' if complete else 'partial', 'ip': str(address), 'asn': asn,
-        'is_residential': residential, 'is_broadcast': broadcast, 'fraud_score': score,
+        'status': 'ok' if complete else 'partial',
+        'ip': str(address),
+        'asn': asn,
+        'is_residential': residential,
+        'is_broadcast': broadcast,
+        'fraud_score': score,
         'detail': '经此节点出口查询 IPPure。' if complete else 'IPPure 未提供部分字段；缺失项保持未知。',
     }
 
@@ -52,7 +64,9 @@ def normalize_quality(payload):
 def measure_quality(port):
     proxy_url = f'http://127.0.0.1:{port}'
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({'http': proxy_url, 'https': proxy_url}))
-    request = urllib.request.Request(IPPURE_URL, headers={'Accept': 'application/json', 'User-Agent': 'CBC-Manager/1.0'})
+    request = urllib.request.Request(
+        IPPURE_URL, headers={'Accept': 'application/json', 'User-Agent': 'CBC-Manager/1.0'}
+    )
     try:
         with opener.open(request, timeout=QUALITY_TIMEOUT) as response:
             raw = response.read(MAX_RESPONSE_BYTES + 1)
@@ -73,20 +87,36 @@ def failed(detail):
 def configuration(proxies, quality=False):
     # 各节点独立接受延迟请求；DNS 不经过列表中的另一个节点。
     config = {
-        'mode': 'rule', 'ipv6': False, 'allow-lan': False, 'log-level': 'silent',
-        'find-process-mode': 'off', 'geo-auto-update': False, 'geodata-mode': False,
+        'mode': 'rule',
+        'ipv6': False,
+        'allow-lan': False,
+        'log-level': 'silent',
+        'find-process-mode': 'off',
+        'geo-auto-update': False,
+        'geodata-mode': False,
         'external-controller': '127.0.0.1:9090',
-        'dns': {'enable': True, 'ipv6': False, 'enhanced-mode': 'redir-host',
-                'use-hosts': False, 'use-system-hosts': False,
-                'nameserver': ['https://1.1.1.1/dns-query'],
-                'proxy-server-nameserver': ['https://1.1.1.1/dns-query']},
-        'proxies': proxies, 'rules': ['MATCH,REJECT'],
+        'dns': {
+            'enable': True,
+            'ipv6': False,
+            'enhanced-mode': 'redir-host',
+            'use-hosts': False,
+            'use-system-hosts': False,
+            'nameserver': ['https://1.1.1.1/dns-query'],
+            'proxy-server-nameserver': ['https://1.1.1.1/dns-query'],
+        },
+        'proxies': proxies,
+        'rules': ['MATCH,REJECT'],
     }
     if quality:
         # 每个入口固定使用一个节点，失败时没有 DIRECT 或其他节点可回退。
         config['listeners'] = [
-            {'name': f'quality-{index}', 'type': 'http', 'listen': '127.0.0.1',
-             'port': 18080 + index, 'proxy': proxy['name']}
+            {
+                'name': f'quality-{index}',
+                'type': 'http',
+                'listen': '127.0.0.1',
+                'port': 18080 + index,
+                'proxy': proxy['name'],
+            }
             for index, proxy in enumerate(proxies)
         ]
     return config
@@ -107,8 +137,12 @@ def main():
             proxy = {**node['config'], 'name': node['id'], 'udp': False}
             path.write_text(json.dumps(configuration([proxy])))
             try:
-                checked = subprocess.run(['mihomo', '-t', '-d', directory, '-f', str(path)],
-                                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=3)
+                checked = subprocess.run(
+                    ['mihomo', '-t', '-d', directory, '-f', str(path)],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    timeout=3,
+                )
                 if checked.returncode:
                     results[node['id']] = failure('节点配置无法通过 Mihomo 校验。')
                     continue
@@ -118,8 +152,9 @@ def main():
             valid.append(proxy)
         if valid:
             path.write_text(json.dumps(configuration(valid, quality)))
-            process = subprocess.Popen(['mihomo', '-d', directory, '-f', str(path)],
-                                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            process = subprocess.Popen(
+                ['mihomo', '-d', directory, '-f', str(path)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+            )
             try:
                 deadline = time.monotonic() + 5
                 while True:
@@ -139,7 +174,12 @@ def main():
 
                 def measure(proxy):
                     query = urllib.parse.urlencode({'url': TEST_URL, 'timeout': TIMEOUT_MS, 'expected': '204'})
-                    url = 'http://127.0.0.1:9090/proxies/' + urllib.parse.quote(proxy['name'], safe='') + '/delay?' + query
+                    url = (
+                        'http://127.0.0.1:9090/proxies/'
+                        + urllib.parse.quote(proxy['name'], safe='')
+                        + '/delay?'
+                        + query
+                    )
                     try:
                         with opener.open(url, timeout=TIMEOUT_MS / 1000 + 1) as response:
                             delay = json.load(response).get('delay')

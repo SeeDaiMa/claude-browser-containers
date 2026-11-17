@@ -1,4 +1,5 @@
 """持续观察实例，只恢复用户要求运行的原节点，不替换节点或放宽网络规则。"""
+
 import hashlib
 import secrets
 import subprocess
@@ -60,8 +61,14 @@ def _state(row):
         if not state or state['generation'] != generation:
             # 首轮和后续复测均错开，不会一次向所有节点发请求。
             offset = int(hashlib.sha256(slug.encode()).hexdigest()[:4], 16) % 120
-            state = {'generation': generation, 'next_probe': time.monotonic() + offset, 'component_failures': 0,
-                     'probe_failures': 0, 'stable_since': None, 'fault_since': None}
+            state = {
+                'generation': generation,
+                'next_probe': time.monotonic() + offset,
+                'component_failures': 0,
+                'probe_failures': 0,
+                'stable_since': None,
+                'fault_since': None,
+            }
             _STATE[slug] = state
         return state
 
@@ -86,15 +93,25 @@ def public_status(row, runtime, exit_row, proxy=None):
         status, detail = 'warning', recovery.get('detail') or '检测到连接异常，正在观察并准备恢复原节点。'
     elif enabled:
         status, detail = 'healthy', '持续监测中，仅恢复原绑定节点。'
-    return {'enabled': enabled, 'state': status, 'detail': detail, 'fault_since': observed.get('fault_since'),
-            'recovery_attempts': recovery.get('attempts', 0), 'next_retry_at': recovery.get('next_retry_at'),
-            'checked_at': _SERVICE['checked_at']}
+    return {
+        'enabled': enabled,
+        'state': status,
+        'detail': detail,
+        'fault_since': observed.get('fault_since'),
+        'recovery_attempts': recovery.get('attempts', 0),
+        'next_retry_at': recovery.get('next_retry_at'),
+        'checked_at': _SERVICE['checked_at'],
+    }
 
 
 def _busy(instance_id):
     import manager_core as core
+
     with core._GUARD:
-        return any(task['instance_id'] == instance_id and task['state'] in ('queued', 'running') for task in core._TASKS.values())
+        return any(
+            task['instance_id'] == instance_id and task['state'] in ('queued', 'running')
+            for task in core._TASKS.values()
+        )
 
 
 def _eligible(row):
@@ -109,9 +126,13 @@ def _reload_row(row):
 
 def tick():
     import manager_core as core
+
     snapshot = core.runtime_snapshot()
     with _GUARD:
-        _SERVICE.update(checked_at=store._now(), error='' if snapshot['docker']['ok'] else 'Docker 未连接，健康监测和自动恢复已暂停。')
+        _SERVICE.update(
+            checked_at=store._now(),
+            error='' if snapshot['docker']['ok'] else 'Docker 未连接，健康监测和自动恢复已暂停。',
+        )
     if not snapshot['docker']['ok']:
         return
     try:
@@ -134,9 +155,11 @@ def tick():
                 # Only the short adoption write needs the instance lock.
                 with store.instance_operation(row['slug'], blocking=False):
                     row = _reload_row(row)
+
                     def adopt(raw):
                         if 'desired_running' not in raw and not raw.get('trashed_at'):
                             raw.update(desired_running=True, run_generation=secrets.token_hex(8), recovery={})
+
                     row['raw'] = store.update_instance(row['slug'], adopt)
             if row['trashed_at'] or not row['raw'].get('desired_running'):
                 continue
@@ -160,8 +183,16 @@ def tick():
                     state['component_failures'] = 0
                     state['stable_since'] = state['stable_since'] or now
                     if observation is not None:
-                        exits[row['slug']] = store.save_exit(row['slug'], observation['status'], observation['ip'], observation['detail'], observation.get('country_code'))
-                        state['probe_failures'] = state['probe_failures'] + 1 if observation['status'] == 'failed' else 0
+                        exits[row['slug']] = store.save_exit(
+                            row['slug'],
+                            observation['status'],
+                            observation['ip'],
+                            observation['detail'],
+                            observation.get('country_code'),
+                        )
+                        state['probe_failures'] = (
+                            state['probe_failures'] + 1 if observation['status'] == 'failed' else 0
+                        )
                         state['next_probe'] = now + (30 if observation['status'] == 'failed' else PROBE_INTERVAL)
                 faulty = runtime != 'running' or (exits.get(row['slug']) or {}).get('status') == 'failed'
                 if faulty:
@@ -169,18 +200,33 @@ def tick():
                     state['stable_since'] = None
                 else:
                     state['fault_since'] = None
-                    if state['stable_since'] and now - state['stable_since'] >= STABLE_SECONDS and (exits.get(row['slug']) or {}).get('status') == 'ok':
+                    if (
+                        state['stable_since']
+                        and now - state['stable_since'] >= STABLE_SECONDS
+                        and (exits.get(row['slug']) or {}).get('status') == 'ok'
+                    ):
                         if row['raw'].get('recovery'):
                             store.update_instance(row['slug'], lambda raw: raw.update(recovery={}))
                 recovery = row['raw'].get('recovery') or {}
                 should_recover = state['component_failures'] >= 3 or state['probe_failures'] >= 2
                 if should_recover and recovery.get('attempts', 0) >= MAX_ATTEMPTS and not recovery.get('exhausted'):
+
                     def exhaust(raw, row=row, recovery=recovery):
                         if raw.get('run_generation') == row['raw'].get('run_generation') and raw.get('desired_running'):
-                            raw['recovery'] = {**recovery, 'exhausted': True, 'next_retry_at': None,
-                                               'detail': '自动恢复已达 3 次上限，请检查原节点后手动启动。'}
+                            raw['recovery'] = {
+                                **recovery,
+                                'exhausted': True,
+                                'next_retry_at': None,
+                                'detail': '自动恢复已达 3 次上限，请检查原节点后手动启动。',
+                            }
+
                     store.update_instance(row['slug'], exhaust)
-                elif should_recover and not _STOP.is_set() and not recovery.get('exhausted') and time.time() >= recovery.get('next_retry_at', 0):
+                elif (
+                    should_recover
+                    and not _STOP.is_set()
+                    and not recovery.get('exhausted')
+                    and time.time() >= recovery.get('next_retry_at', 0)
+                ):
                     core.enqueue('recover', row['id'], payload={'generation': row['raw'].get('run_generation')})
         except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired):
             # 单个坏代理配置或正在执行的操作不阻止其他实例监测。
@@ -198,6 +244,7 @@ def _current(row, generation):
 
 def recover(task):
     import manager_core as core
+
     row = store.instance_by_id(task['instance_id'])
     slug = row['slug']
     generation = task['payload'].get('generation')
@@ -209,11 +256,17 @@ def recover(task):
         task['result'] = {'detail': '恢复已停止，请手动检查原节点。'}
         return
     attempt = recovery.get('attempts', 0) + 1
-    result = {'attempts': attempt, 'next_retry_at': time.time() + RETRY_DELAYS[attempt - 1], 'exhausted': False,
-              'detail': f'正在进行第 {attempt}/{MAX_ATTEMPTS} 次原节点恢复。'}
+    result = {
+        'attempts': attempt,
+        'next_retry_at': time.time() + RETRY_DELAYS[attempt - 1],
+        'exhausted': False,
+        'detail': f'正在进行第 {attempt}/{MAX_ATTEMPTS} 次原节点恢复。',
+    }
+
     def record(raw):
         if raw.get('run_generation') == generation and raw.get('desired_running'):
             raw['recovery'] = dict(result)
+
     store.update_instance(slug, record)
     try:
         core._advance(task, '检查环境')
@@ -225,7 +278,11 @@ def recover(task):
         if not snapshot['docker']['ok'] or snapshot['containers'] is None:
             raise RuntimeError('Docker 暂时无法连接。')
         core._advance(task, '恢复原节点连接')
-        intact = all(snapshot['containers'].get(cbc.container(slug, role)) == 'running' and snapshot['health'].get(cbc.container(slug, role)) not in ('unhealthy', 'starting') for role in ('guard', 'browser'))
+        intact = all(
+            snapshot['containers'].get(cbc.container(slug, role)) == 'running'
+            and snapshot['health'].get(cbc.container(slug, role)) not in ('unhealthy', 'starting')
+            for role in ('guard', 'browser')
+        )
         if intact:
             # 浏览器和 guard 保持原容器，只重建代理并加载重新解析后的窄白名单。
             identity = cbc.running_browser_identity(slug)
@@ -233,7 +290,18 @@ def recover(task):
             if not _current(store.instance_by_id(row['id']), generation):
                 task['result'] = {'detail': '用户已停止实例，恢复已取消。'}
                 return
-            cbc.compose(slug, 'up', '-d', '--no-deps', '--force-recreate', '--wait', '--wait-timeout', '90', 'proxy', timeout=120)
+            cbc.compose(
+                slug,
+                'up',
+                '-d',
+                '--no-deps',
+                '--force-recreate',
+                '--wait',
+                '--wait-timeout',
+                '90',
+                'proxy',
+                timeout=120,
+            )
             core._advance(task, '验证代理连接')
             cbc.verify_exit(slug)
         else:
@@ -245,7 +313,13 @@ def recover(task):
             core._boot(task, slug, verify=True)
         result['detail'] = f'原节点已恢复（第 {attempt}/{MAX_ATTEMPTS} 次），继续观察稳定性。'
         state = _state(row)
-        state.update(component_failures=0, probe_failures=0, stable_since=time.monotonic(), fault_since=None, next_probe=time.monotonic() + 30)
+        state.update(
+            component_failures=0,
+            probe_failures=0,
+            stable_since=time.monotonic(),
+            fault_since=None,
+            next_probe=time.monotonic() + 30,
+        )
         task['result'] = {'detail': result['detail']}
     except Exception as error:
         if isinstance(error, cbc.CountryPolicyError):
@@ -253,7 +327,11 @@ def recover(task):
             result['detail'] = str(error)
         else:
             result['exhausted'] = attempt >= MAX_ATTEMPTS
-            result['detail'] = '自动恢复已达 3 次上限，请检查原节点后手动启动。' if result['exhausted'] else f'第 {attempt}/{MAX_ATTEMPTS} 次恢复未成功，将等待后重试原节点。'
+            result['detail'] = (
+                '自动恢复已达 3 次上限，请检查原节点后手动启动。'
+                if result['exhausted']
+                else f'第 {attempt}/{MAX_ATTEMPTS} 次恢复未成功，将等待后重试原节点。'
+            )
         raise RuntimeError(result['detail']) from None
     finally:
         # 等待从本次恢复结束后计算，耗时的连接失败不能吃掉重试间隔。

@@ -12,13 +12,25 @@ describe('节点使用者索引及兼容入口', () => {
 
   it('按全局节点 ID 汇总活动与回收站实例，排除手动代理并保留顺序', () => {
     const active = fixtureInstance('a', 'n1')
-    const manual = fixtureInstance('manual', 'n1', { proxy: { mode: 'socks', label: 'fixture', node_id: 'n1' } })
+    const manual = fixtureInstance('manual', 'n1', {
+      proxy: { mode: 'socks', label: 'fixture', node_id: 'n1' },
+    })
     const other = fixtureInstance('other', 'n2')
-    const trash = fixtureInstance('b', 'n1', { trashed_at: '2026-11-17T00:00:00Z',
-      proxy: { mode: 'subscription', label: 'fixture', subscription_id: 'different', node_id: 'n1' } })
+    const trash = fixtureInstance('b', 'n1', {
+      trashed_at: '2026-11-17T00:00:00Z',
+      proxy: {
+        mode: 'subscription',
+        label: 'fixture',
+        subscription_id: 'different',
+        node_id: 'n1',
+      },
+    })
     const data = fixtureOverview([active, manual, other], [trash])
     const index = nodeOccupancyIndex(data)
-    const expected = [{ id: 'a', name: '实例-a', trashed: false }, { id: 'b', name: '实例-b', trashed: true }]
+    const expected = [
+      { id: 'a', name: '实例-a', trashed: false },
+      { id: 'b', name: '实例-b', trashed: true },
+    ]
     expect(nodeOccupants(index, 'n1')).toEqual(expected)
     expect(nodeOccupants(data, 'n1')).toEqual(expected)
     expect(nodeOccupants(index, 'n1', [], 'a')).toEqual(expected.slice(1))
@@ -30,7 +42,10 @@ describe('节点使用者索引及兼容入口', () => {
     const changedUsage = { ...original, usage: { ...original.usage, memory_mib: 200 } }
     const after = nodeOccupancyIndex(fixtureOverview([changedUsage]), before)!
     expect(after.get('n1')).toBe(before.get('n1'))
-    const renamed = nodeOccupancyIndex(fixtureOverview([{ ...original, display_name: '新名字' }]), after)!
+    const renamed = nodeOccupancyIndex(
+      fixtureOverview([{ ...original, display_name: '新名字' }]),
+      after,
+    )!
     expect(renamed.get('n1')).not.toBe(after.get('n1'))
     expect(renamed.get('n1')?.[0].name).toBe('新名字')
     expect(before.get('n1')?.[0].name).toBe('实例-a')

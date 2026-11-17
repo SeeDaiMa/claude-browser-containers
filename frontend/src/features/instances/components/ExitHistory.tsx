@@ -2,7 +2,13 @@ import type { ExitInfo } from '../../../shared/api/client'
 import { formatDate } from '../../../shared/lib/format'
 import { Icon } from '../../../shared/ui/Icon'
 
-export function ExitHistory({ exit, compact = false }: { exit: ExitInfo | null; compact?: boolean }) {
+export function ExitHistory({
+  exit,
+  compact = false,
+}: {
+  exit: ExitInfo | null
+  compact?: boolean
+}) {
   const changes = [...(exit?.history || [])].reverse()
   return (
     <div className={`exit-history${compact ? ' exit-history--compact' : ''}`}>

@@ -9,7 +9,9 @@ const codes = `
   MT MU MV MW MX MY MZ NA NC NE NF NG NI NL NO NP NR NU NZ OM PA PE PF PG PH PK PL PM PN PR PS PT PW PY QA RE RO RS
   RU RW SA SB SC SD SE SG SH SI SJ SK SL SM SN SO SR SS ST SV SX SY SZ TC TD TF TG TH TJ TK TL TM TN TO TR TT TV TW
   TZ UA UG UM US UY UZ VA VC VE VG VI VN VU WF WS YE YT ZA ZM ZW
-`.trim().split(/\s+/)
+`
+  .trim()
+  .split(/\s+/)
 const labels = new Intl.DisplayNames(['zh-CN'], { type: 'region', style: 'short' })
 const names = ['zh-CN', 'zh-TW', 'en'].map(
   (locale) => new Intl.DisplayNames([locale], { type: 'region' }),
@@ -29,21 +31,29 @@ const aliases: Record<string, string[]> = {
 const countries = new Map<string, NodeCountry>(
   codes.map((code) => [code, { code, label: labels.of(code) || code }]),
 )
-const matches = codes.flatMap((code) => {
-  const country = countries.get(code)!
-  const terms = new Set([country.label, ...names.map((name) => name.of(code) || ''), ...(aliases[code] || [])])
-  return [...terms].filter(Boolean).map((term) => {
-    const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    // 英文名称前后不能连着字母；允许紧接节点编号或中文后缀。
-    const pattern = /[a-z]/i.test(term) ? `(?<![a-z])${escaped}(?![a-z])` : escaped
-    return { country, term, pattern: new RegExp(pattern, 'i') }
+const matches = codes
+  .flatMap((code) => {
+    const country = countries.get(code)!
+    const terms = new Set([
+      country.label,
+      ...names.map((name) => name.of(code) || ''),
+      ...(aliases[code] || []),
+    ])
+    return [...terms].filter(Boolean).map((term) => {
+      const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      // 英文名称前后不能连着字母；允许紧接节点编号或中文后缀。
+      const pattern = /[a-z]/i.test(term) ? `(?<![a-z])${escaped}(?![a-z])` : escaped
+      return { country, term, pattern: new RegExp(pattern, 'i') }
+    })
   })
-}).sort((a, b) => b.term.length - a.term.length)
+  .sort((a, b) => b.term.length - a.term.length)
 
 export function countryFromNodeName(name: string): NodeCountry | null {
   const flag = name.match(/[\u{1F1E6}-\u{1F1FF}]{2}/u)?.[0]
   if (flag) {
-    const code = [...flag].map((letter) => String.fromCharCode(letter.codePointAt(0)! - 0x1f1e6 + 65)).join('')
+    const code = [...flag]
+      .map((letter) => String.fromCharCode(letter.codePointAt(0)! - 0x1f1e6 + 65))
+      .join('')
     const country = countries.get(code)
     if (country) return country
   }

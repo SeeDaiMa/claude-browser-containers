@@ -1,4 +1,5 @@
 """只读查询项目内的国家归属库，不向外部服务发送 IP。"""
+
 from functools import lru_cache
 import ipaddress
 from pathlib import Path

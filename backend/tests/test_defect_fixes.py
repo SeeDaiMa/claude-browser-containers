@@ -1,4 +1,5 @@
 """R1–R9 的隔离回归。只使用临时目录和显式夹具，不访问真实 Docker。"""
+
 import asyncio
 import concurrent.futures
 import io
@@ -28,8 +29,14 @@ from test_reliability import instance, isolated as isolated, snapshot, task
 
 
 def _node(name='audit-node'):
-    return {'name': name, 'type': 'ss', 'server': '192.0.2.9', 'port': 443,
-            'cipher': 'aes-128-gcm', 'password': 'fixture-only'}
+    return {
+        'name': name,
+        'type': 'ss',
+        'server': '192.0.2.9',
+        'port': 443,
+        'cipher': 'aes-128-gcm',
+        'password': 'fixture-only',
+    }
 
 
 def _subscription():
@@ -85,7 +92,11 @@ def test_corrupt_exit_file_keeps_the_instance_list_and_pauses_recovery(isolated,
     instance(isolated)
     store.EXITS.write_text('{invalid')
     original = store.EXITS.read_text()
-    monkeypatch.setattr(core, 'runtime_snapshot', lambda force=False: {'docker': {'ok': False}, 'containers': None, 'health': {}, 'ids': {}})
+    monkeypatch.setattr(
+        core,
+        'runtime_snapshot',
+        lambda force=False: {'docker': {'ok': False}, 'containers': None, 'health': {}, 'ids': {}},
+    )
     listed = core.list_instances()
     assert [row['id'] for row in listed['instances']] == ['ifixture']
     assert listed['config_errors'][-1]['file'] == 'configs/private/exits.json'
@@ -98,8 +109,16 @@ def test_corrupt_exit_file_keeps_the_instance_list_and_pauses_recovery(isolated,
 
 @pytest.mark.parametrize('field', ['phase', 'error'])
 def test_finished_task_missing_public_field_is_isolated(isolated, field):
-    record = {'id': 'taudit', 'kind': 'stop', 'instance_id': 'ifixture', 'state': 'succeeded',
-              'phase': '停止实例', 'phases': [], 'error': '', 'result': {}}
+    record = {
+        'id': 'taudit',
+        'kind': 'stop',
+        'instance_id': 'ifixture',
+        'state': 'succeeded',
+        'phase': '停止实例',
+        'phases': [],
+        'error': '',
+        'result': {},
+    }
     record.pop(field)
     path = store.PRIVATE / 'tasks.json'
     path.write_text(json.dumps([record]))
@@ -113,18 +132,38 @@ def test_finished_task_missing_public_field_is_isolated(isolated, field):
 @pytest.mark.parametrize('broken', [{'last_success': 12}, {'history': 12}])
 def test_exit_probe_keeps_unreadable_record_and_can_be_repeated(isolated, monkeypatch, broken):
     instance(isolated)
-    original = {'status': 'ok', 'ip': '1.1.1.1', 'previous_ip': '8.8.8.8',
-                'changed_at': '2026-11-16T00:00:00Z', 'history': [], **broken}
+    original = {
+        'status': 'ok',
+        'ip': '1.1.1.1',
+        'previous_ip': '8.8.8.8',
+        'changed_at': '2026-11-16T00:00:00Z',
+        'history': [],
+        **broken,
+    }
     store._save(store.EXITS, {'ifixture': original})
     before = store.EXITS.read_text()
     monkeypatch.setattr(core, 'runtime_snapshot', lambda force=False: snapshot())
-    monkeypatch.setattr(cbc, 'probe_proxy', lambda _slug: {
-        'status': 'ok', 'ip': '192.0.2.9', 'detail': '', 'country_code': 'AU',
-    })
-    monkeypatch.setattr(monitor, '_state', lambda _row: {
-        'next_probe': 0, 'component_failures': 0, 'probe_failures': 0,
-        'stable_since': None, 'fault_since': None,
-    })
+    monkeypatch.setattr(
+        cbc,
+        'probe_proxy',
+        lambda _slug: {
+            'status': 'ok',
+            'ip': '192.0.2.9',
+            'detail': '',
+            'country_code': 'AU',
+        },
+    )
+    monkeypatch.setattr(
+        monitor,
+        '_state',
+        lambda _row: {
+            'next_probe': 0,
+            'component_failures': 0,
+            'probe_failures': 0,
+            'stable_since': None,
+            'fault_since': None,
+        },
+    )
     saved = store.save_exit('ifixture', 'ok', '192.0.2.9', '', 'AU')
     assert store.exit_record_readable(saved)
     assert saved['last_success']['ip'] == '192.0.2.9'
@@ -147,27 +186,40 @@ def test_incomplete_task_record_is_isolated_without_blocking_startup(isolated):
 
 def _exit_record(**overrides):
     record = {
-        'status': 'ok', 'ip': '203.0.113.5', 'previous_ip': '203.0.113.1',
-        'changed_at': '2026-11-16T00:00:00Z', 'checked_at': '2026-11-16T00:00:00Z', 'history': [],
+        'status': 'ok',
+        'ip': '203.0.113.5',
+        'previous_ip': '203.0.113.1',
+        'changed_at': '2026-11-16T00:00:00Z',
+        'checked_at': '2026-11-16T00:00:00Z',
+        'history': [],
         'last_success': {'ip': '203.0.113.5', 'country_code': 'AU', 'checked_at': '2026-11-16T00:00:00Z'},
     }
     record.update(overrides)
     return record
 
 
-@pytest.mark.parametrize('corrupt', [
-    {'ip': ['203.0.113.8']},
-    {'ip': {'value': '203.0.113.8'}},
-    {'ip': 134744072},
-    {'ip': 'not-an-ip'},
-    {'previous_ip': ['203.0.113.1']},
-    {'last_success': {'ip': ['203.0.113.8'], 'country_code': 'AU', 'checked_at': '2026-11-16T00:00:00Z'}},
-    {'history': [{'id': 'c1', 'previous_ip': '203.0.113.1', 'ip': ['203.0.113.8'], 'changed_at': '2026-11-16T00:00:00Z'}]},
-])
+@pytest.mark.parametrize(
+    'corrupt',
+    [
+        {'ip': ['203.0.113.8']},
+        {'ip': {'value': '203.0.113.8'}},
+        {'ip': 134744072},
+        {'ip': 'not-an-ip'},
+        {'previous_ip': ['203.0.113.1']},
+        {'last_success': {'ip': ['203.0.113.8'], 'country_code': 'AU', 'checked_at': '2026-11-16T00:00:00Z'}},
+        {
+            'history': [
+                {'id': 'c1', 'previous_ip': '203.0.113.1', 'ip': ['203.0.113.8'], 'changed_at': '2026-11-16T00:00:00Z'}
+            ]
+        },
+    ],
+)
 def test_corrupt_exit_ip_keeps_the_other_instances(isolated, monkeypatch, corrupt):
     instance(isolated)
     instance(isolated, 'iother', port=5891, network_index=91)
-    store._save(store.EXITS, {'ifixture': _exit_record(**corrupt), 'iother': _exit_record(ip='8.8.8.8', previous_ip='1.1.1.1')})
+    store._save(
+        store.EXITS, {'ifixture': _exit_record(**corrupt), 'iother': _exit_record(ip='8.8.8.8', previous_ip='1.1.1.1')}
+    )
     original = store.EXITS.read_text()
     seen = []
 
@@ -176,9 +228,16 @@ def test_corrupt_exit_ip_keeps_the_other_instances(isolated, monkeypatch, corrup
         return 'US'
 
     monkeypatch.setattr(geolocation, 'country_code', country)
-    monkeypatch.setattr(core, 'runtime_snapshot', lambda force=False: {
-        'docker': {'ok': False}, 'containers': None, 'health': {}, 'ids': {},
-    })
+    monkeypatch.setattr(
+        core,
+        'runtime_snapshot',
+        lambda force=False: {
+            'docker': {'ok': False},
+            'containers': None,
+            'health': {},
+            'ids': {},
+        },
+    )
     listed = core.list_instances()
     by_id = {row['id']: row for row in listed['instances']}
     assert set(by_id) == {'ifixture', 'iother'}
@@ -186,7 +245,9 @@ def test_corrupt_exit_ip_keeps_the_other_instances(isolated, monkeypatch, corrup
     assert by_id['iother']['exit']['ip'] == '8.8.8.8'
     assert by_id['iother']['exit']['country_code'] == 'US'
     assert seen == ['8.8.8.8']
-    assert any(item['id'] == 'ifixture' and item['file'] == 'configs/private/exits.json' for item in listed['config_errors'])
+    assert any(
+        item['id'] == 'ifixture' and item['file'] == 'configs/private/exits.json' for item in listed['config_errors']
+    )
     assert store.EXITS.read_text() == original
 
 
@@ -194,43 +255,76 @@ def test_shared_exit_warning_uses_only_verified_ip(isolated, monkeypatch):
     instance(isolated)
     instance(isolated, 'iother', port=5891, network_index=91)
     instance(isolated, 'ishared', port=5892, network_index=92)
-    store._save(store.EXITS, {
-        'ifixture': _exit_record(ip=['203.0.113.8']),
-        'iother': _exit_record(ip='8.8.8.8', previous_ip='1.1.1.1'),
-        'ishared': _exit_record(ip='8.8.8.8', previous_ip='1.1.1.1'),
-    })
+    store._save(
+        store.EXITS,
+        {
+            'ifixture': _exit_record(ip=['203.0.113.8']),
+            'iother': _exit_record(ip='8.8.8.8', previous_ip='1.1.1.1'),
+            'ishared': _exit_record(ip='8.8.8.8', previous_ip='1.1.1.1'),
+        },
+    )
     monkeypatch.setattr(geolocation, 'country_code', lambda value: 'US' if value == '8.8.8.8' else None)
-    monkeypatch.setattr(core, 'runtime_snapshot', lambda force=False: {
-        'docker': {'ok': False}, 'containers': None, 'health': {}, 'ids': {},
-    })
+    monkeypatch.setattr(
+        core,
+        'runtime_snapshot',
+        lambda force=False: {
+            'docker': {'ok': False},
+            'containers': None,
+            'health': {},
+            'ids': {},
+        },
+    )
     listed = core.list_instances()
     assert [row['id'] for row in listed['instances']] == ['ifixture', 'iother', 'ishared']
-    assert listed['exit_warnings'] == [{
-        'ip': '8.8.8.8',
-        'instances': [
-            {'id': 'iother', 'name': '测试实例', 'checked_at': '2026-11-16T00:00:00Z'},
-            {'id': 'ishared', 'name': '测试实例', 'checked_at': '2026-11-16T00:00:00Z'},
-        ],
-    }]
+    assert listed['exit_warnings'] == [
+        {
+            'ip': '8.8.8.8',
+            'instances': [
+                {'id': 'iother', 'name': '测试实例', 'checked_at': '2026-11-16T00:00:00Z'},
+                {'id': 'ishared', 'name': '测试实例', 'checked_at': '2026-11-16T00:00:00Z'},
+            ],
+        }
+    ]
 
 
 def test_corrupt_exit_ip_is_kept_aside_when_observation_is_saved(isolated, monkeypatch):
     instance(isolated)
     store._save(store.EXITS, {'ifixture': _exit_record(ip=['203.0.113.8'])})
     before = store.EXITS.read_text()
-    monkeypatch.setattr(core, 'runtime_snapshot', lambda force=False: {
-        'docker': {'ok': False}, 'containers': None, 'health': {}, 'ids': {},
-    })
+    monkeypatch.setattr(
+        core,
+        'runtime_snapshot',
+        lambda force=False: {
+            'docker': {'ok': False},
+            'containers': None,
+            'health': {},
+            'ids': {},
+        },
+    )
     listed = core.list_instances()
     assert listed['instances'][0]['exit'] is None
     monkeypatch.setattr(core, 'runtime_snapshot', lambda force=False: snapshot())
-    monkeypatch.setattr(cbc, 'probe_proxy', lambda _slug: {
-        'status': 'ok', 'ip': '192.0.2.9', 'detail': '', 'country_code': 'AU',
-    })
-    monkeypatch.setattr(monitor, '_state', lambda _row: {
-        'next_probe': 0, 'component_failures': 0, 'probe_failures': 0,
-        'stable_since': None, 'fault_since': None,
-    })
+    monkeypatch.setattr(
+        cbc,
+        'probe_proxy',
+        lambda _slug: {
+            'status': 'ok',
+            'ip': '192.0.2.9',
+            'detail': '',
+            'country_code': 'AU',
+        },
+    )
+    monkeypatch.setattr(
+        monitor,
+        '_state',
+        lambda _row: {
+            'next_probe': 0,
+            'component_failures': 0,
+            'probe_failures': 0,
+            'stable_since': None,
+            'fault_since': None,
+        },
+    )
     monitor.tick()
     saved = store.load_exits()['ifixture']
     assert store.exit_record_readable(saved)
@@ -244,14 +338,28 @@ def test_corrupt_exit_ip_is_kept_aside_when_observation_is_saved(isolated, monke
 
 def test_bad_nested_exit_record_stays_out_of_the_instance_list(isolated, monkeypatch):
     instance(isolated)
-    content = json.dumps({'ifixture': {
-        'status': 'ok', 'ip': '1.1.1.1', 'previous_ip': '8.8.8.8',
-        'changed_at': '2026-11-16T00:00:00Z', 'last_success': 12,
-    }})
+    content = json.dumps(
+        {
+            'ifixture': {
+                'status': 'ok',
+                'ip': '1.1.1.1',
+                'previous_ip': '8.8.8.8',
+                'changed_at': '2026-11-16T00:00:00Z',
+                'last_success': 12,
+            }
+        }
+    )
     store.EXITS.write_text(content)
-    monkeypatch.setattr(core, 'runtime_snapshot', lambda force=False: {
-        'docker': {'ok': False}, 'containers': None, 'health': {}, 'ids': {},
-    })
+    monkeypatch.setattr(
+        core,
+        'runtime_snapshot',
+        lambda force=False: {
+            'docker': {'ok': False},
+            'containers': None,
+            'health': {},
+            'ids': {},
+        },
+    )
     listed = core.list_instances()
     assert [row['id'] for row in listed['instances']] == ['ifixture']
     assert listed['instances'][0]['exit'] is None
@@ -263,13 +371,24 @@ def test_restore_rejects_a_subscription_id_outside_the_cache_directory(isolated,
     outside = isolated / 'outside-configs-node-cache'
     slug = 'irestoreaudit'
     manifest = {
-        'version': cbc.BACKUP_VERSION, 'slug': slug,
-        'instance': {'id': slug, 'name': slug, 'display_name': '合成恢复夹具',
-                     'port': 5888, 'network_index': 99, 'desired_running': False},
+        'version': cbc.BACKUP_VERSION,
+        'slug': slug,
+        'instance': {
+            'id': slug,
+            'name': slug,
+            'display_name': '合成恢复夹具',
+            'port': 5888,
+            'network_index': 99,
+            'desired_running': False,
+        },
         'proxy': {'host': '', 'port': 1080, 'username': '', 'password': ''},
         'selection': {'subscription_id': str(outside), 'node_id': 'naudit', 'node': 'audit-node'},
         'subscription': {'id': str(outside), 'name': '合成订阅', 'url': 'https://audit.example.test/sub'},
-        'nodes': {'nodes': [{'id': 'naudit', 'name': 'audit-node', 'supported': True, 'config': _node(), 'type': 'ss', 'port': 443}]},
+        'nodes': {
+            'nodes': [
+                {'id': 'naudit', 'name': 'audit-node', 'supported': True, 'config': _node(), 'type': 'ss', 'port': 443}
+            ]
+        },
     }
     archive = isolated / 'synthetic.tgz'
     payload = json.dumps(manifest).encode()
@@ -326,9 +445,13 @@ def test_subscription_backup_restores_the_binding_in_a_clean_project(isolated, m
 
 def test_restore_drops_run_intent_so_monitor_does_not_start_it(isolated, monkeypatch):
     instance(isolated)
-    store.update_instance('ifixture', lambda raw: raw.update(
-        run_generation='archived-generation', recovery={'attempts': 2},
-    ))
+    store.update_instance(
+        'ifixture',
+        lambda raw: raw.update(
+            run_generation='archived-generation',
+            recovery={'attempts': 2},
+        ),
+    )
     monkeypatch.setattr(cbc, 'active', lambda _name: False)
     monkeypatch.setattr(cbc, 'network_index_conflicts', lambda _index: False)
     archive = isolated / 'ifixture.tgz'
@@ -347,9 +470,16 @@ def test_restore_drops_run_intent_so_monitor_does_not_start_it(isolated, monkeyp
     assert (isolated / 'data/ifixture/profile-marker').read_text() == 'preserved'
     queued = []
     monkeypatch.setattr(core, 'enqueue', lambda *args, **kwargs: queued.append(args) or {'id': 'trecover'})
-    monkeypatch.setattr(core, 'runtime_snapshot', lambda force=False: {
-        'docker': {'ok': True, 'detail': ''}, 'containers': {}, 'health': {}, 'ids': {},
-    })
+    monkeypatch.setattr(
+        core,
+        'runtime_snapshot',
+        lambda force=False: {
+            'docker': {'ok': True, 'detail': ''},
+            'containers': {},
+            'health': {},
+            'ids': {},
+        },
+    )
     for _ in range(3):
         monitor.tick()
     assert queued == []
@@ -433,9 +563,17 @@ def test_exit_baseline_falls_back_to_local_lookup_and_rejects_unreadable_records
     monkeypatch.setattr(geolocation, 'country_code', lambda value: 'GB' if value == '203.0.113.5' else None)
     monkeypatch.setattr(cbc, 'docker', lambda *args, **kwargs: SimpleNamespace(returncode=0))
     # 旧记录没有国家代码时，用本地库查上次的出口 IP。
-    store._save(store.EXITS, {'ifixture': {'status': 'ok', 'ip': '203.0.113.5', 'detail': '',
-                                           'last_success': {'ip': '203.0.113.5', 'country_code': None,
-                                                            'checked_at': '2026-11-16T00:00:00Z'}}})
+    store._save(
+        store.EXITS,
+        {
+            'ifixture': {
+                'status': 'ok',
+                'ip': '203.0.113.5',
+                'detail': '',
+                'last_success': {'ip': '203.0.113.5', 'country_code': None, 'checked_at': '2026-11-16T00:00:00Z'},
+            }
+        },
+    )
     assert cbc.baseline_exit_country('ifixture') == ('GB', True)
     cbc.require_same_country('ifixture', {'status': 'ok', 'country_code': 'GB', 'ip': '203.0.113.6'})
     # 记录损坏时无法确认是否一致，必须拒绝且保留原文件。
@@ -568,7 +706,9 @@ def test_request_body_stops_early_and_rejects_bad_encoding(isolated, monkeypatch
         consumed['chunks'] += 1
         return {'type': 'http.request', 'body': b'x' * 16384, 'more_body': consumed['chunks'] < 64}
 
-    request = Request({'type': 'http', 'method': 'POST', 'path': '/', 'headers': [(b'content-length', b'1048576')]}, receive)
+    request = Request(
+        {'type': 'http', 'method': 'POST', 'path': '/', 'headers': [(b'content-length', b'1048576')]}, receive
+    )
     with pytest.raises(RequestBodyError) as caught:
         asyncio.run(main._body(request))
     assert caught.value.status == 413

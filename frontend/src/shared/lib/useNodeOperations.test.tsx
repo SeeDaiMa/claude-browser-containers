@@ -19,7 +19,10 @@ vi.mock('../../app/ManagerProvider', () => ({
 }))
 vi.mock('../api/client', async (original) => {
   const actual = await original<typeof import('../api/client')>()
-  return { ...actual, api: { ...actual.api, testNodes: state.latency, checkNodeQuality: state.quality } }
+  return {
+    ...actual,
+    api: { ...actual.api, testNodes: state.latency, checkNodeQuality: state.quality },
+  }
 })
 
 function useBoth() {
@@ -29,24 +32,41 @@ function useBoth() {
 beforeEach(() => {
   state.tasks = []
   state.submit = vi.fn<Submit>(async (_key, request) => request())
-  state.latency.mockImplementation(async (source, nodes) => fixtureTask('test-nodes', source, nodes))
-  state.quality.mockImplementation(async (source, nodes) => fixtureTask('check-node-quality', source, nodes))
+  state.latency.mockImplementation(async (source, nodes) =>
+    fixtureTask('test-nodes', source, nodes),
+  )
+  state.quality.mockImplementation(async (source, nodes) =>
+    fixtureTask('check-node-quality', source, nodes),
+  )
 })
 
 describe('节点检测操作共用逻辑', () => {
-  it.each(['latency', 'quality'] as const)('%s 操作引用稳定，并使用最新 Manager 回调', async (kind) => {
-    const view = renderHook(useBoth)
-    const before = kind === 'latency' ? view.result.current.latency.testNodes : view.result.current.quality.checkQuality
-    const previousSubmit = state.submit
-    state.submit = vi.fn<Submit>(async (_key, request) => request())
-    await act(async () => { view.rerender() })
-    const after = kind === 'latency' ? view.result.current.latency.testNodes : view.result.current.quality.checkQuality
-    expect(after).toBe(before)
-    await act(async () => { await before('a', ['n1']) })
-    expect(state.submit).toHaveBeenCalledOnce()
-    expect(previousSubmit).not.toHaveBeenCalled()
-    expect(state[kind]).toHaveBeenCalledWith('a', ['n1'])
-  })
+  it.each(['latency', 'quality'] as const)(
+    '%s 操作引用稳定，并使用最新 Manager 回调',
+    async (kind) => {
+      const view = renderHook(useBoth)
+      const before =
+        kind === 'latency'
+          ? view.result.current.latency.testNodes
+          : view.result.current.quality.checkQuality
+      const previousSubmit = state.submit
+      state.submit = vi.fn<Submit>(async (_key, request) => request())
+      await act(async () => {
+        view.rerender()
+      })
+      const after =
+        kind === 'latency'
+          ? view.result.current.latency.testNodes
+          : view.result.current.quality.checkQuality
+      expect(after).toBe(before)
+      await act(async () => {
+        await before('a', ['n1'])
+      })
+      expect(state.submit).toHaveBeenCalledOnce()
+      expect(previousSubmit).not.toHaveBeenCalled()
+      expect(state[kind]).toHaveBeenCalledWith('a', ['n1'])
+    },
+  )
 
   it('分别匹配两种任务和来源，结束后移除忙碌状态', async () => {
     const latency = fixtureTask('test-nodes', 'a', ['n1'])
@@ -63,7 +83,9 @@ describe('节点检测操作共用逻辑', () => {
     expect(view.result.current.quality.isNodeChecking('b', 'n2')).toBe(true)
     expect(view.result.current.quality.isNodeChecking('a', 'n2')).toBe(false)
     state.tasks = [{ ...quality, state: 'interrupted' }]
-    await act(async () => { view.rerender() })
+    await act(async () => {
+      view.rerender()
+    })
     expect(view.result.current.quality.activeQuality('b')).toBeUndefined()
     expect(view.result.current.quality.qualityBusy('b')).toBe(false)
     expect(view.result.current.quality.isNodeChecking('b', 'n2')).toBe(false)
@@ -74,10 +96,15 @@ describe('节点检测操作共用逻辑', () => {
     state.quality.mockReturnValueOnce(request.promise)
     const view = renderHook(useBoth)
     let pending: Promise<void> | undefined
-    act(() => { pending = view.result.current.quality.checkQuality('a', ['n1']) })
+    act(() => {
+      pending = view.result.current.quality.checkQuality('a', ['n1'])
+    })
     expect(view.result.current.quality.qualityBusy('a')).toBe(true)
     expect(view.result.current.quality.qualityBusy('b')).toBe(false)
-    await act(async () => { request.resolve(fixtureTask('check-node-quality', 'a')); await pending })
+    await act(async () => {
+      request.resolve(fixtureTask('check-node-quality', 'a'))
+      await pending
+    })
     expect(view.result.current.quality.qualityBusy('a')).toBe(false)
   })
 
@@ -99,8 +126,11 @@ describe('节点检测操作共用逻辑', () => {
       if (kind === 'latency') await view.result.current.latency.testNodes('a', ['n1', 'n2'])
       else await view.result.current.quality.checkQuality('a', ['n1', 'n2'])
     })
-    expect(state.notify).toHaveBeenCalledWith(kind === 'latency' ? '无法开始测速' : '无法开始 IP 质量检测',
-      'danger', 'fixture failure')
+    expect(state.notify).toHaveBeenCalledWith(
+      kind === 'latency' ? '无法开始测速' : '无法开始 IP 质量检测',
+      'danger',
+      'fixture failure',
+    )
     expect(state[kind]).toHaveBeenCalledWith('a', ['n1', 'n2'])
   })
 })

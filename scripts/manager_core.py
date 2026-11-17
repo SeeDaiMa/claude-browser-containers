@@ -1,4 +1,5 @@
 """网页和后续任务共用的实例操作。容器动作仍调用 cbc。"""
+
 import copy
 from collections import deque
 import hashlib
@@ -37,7 +38,14 @@ _COLLECTION_GUARD = threading.RLock()
 ROLES = ('guard', 'proxy', 'browser')
 _KEEP_TASKS = 50
 _PHASES = {
-    'create': ['检查环境', '保存配置、分配端口和网络', '启动网络保护和代理', '验证代理连接', '启动 Chromium', '等待 Web UI'],
+    'create': [
+        '检查环境',
+        '保存配置、分配端口和网络',
+        '启动网络保护和代理',
+        '验证代理连接',
+        '启动 Chromium',
+        '等待 Web UI',
+    ],
     'start': ['检查环境', '启动网络保护和代理', '验证代理连接', '启动 Chromium', '等待 Web UI'],
     'restart': ['检查环境', '停止实例', '启动网络保护和代理', '验证代理连接', '启动 Chromium', '等待 Web UI'],
     'apply-proxy': ['保存配置'],
@@ -119,11 +127,15 @@ def enqueue(kind, instance_id='', request_id='', payload=None):
                         if not same:
                             raise ValueError('重复的请求标识与原请求不一致。')
                         return public_task(task)
-            if kind == 'create' and any(task['kind'] == 'create' and task['state'] in ('queued', 'running') for task in _TASKS.values()):
+            if kind == 'create' and any(
+                task['kind'] == 'create' and task['state'] in ('queued', 'running') for task in _TASKS.values()
+            ):
                 raise ValueError('已有一个创建任务正在进行。')
             if kind in ('test-nodes', 'check-node-quality') and any(
-                task['kind'] == kind and task.get('subscription_id') == payload['subscription_id']
-                and task['state'] in ('queued', 'running') for task in _TASKS.values()
+                task['kind'] == kind
+                and task.get('subscription_id') == payload['subscription_id']
+                and task['state'] in ('queued', 'running')
+                for task in _TASKS.values()
             ):
                 raise ValueError('此订阅已有节点检测任务，请等待完成。')
         if kind in ('stop', 'trash'):
@@ -246,10 +258,14 @@ def ensure_worker():
             _WORKER = threading.Thread(target=_worker, name='cbc-manager', daemon=True)
             _WORKER.start()
         if not _NODE_TEST_WORKER or not _NODE_TEST_WORKER.is_alive():
-            _NODE_TEST_WORKER = threading.Thread(target=_worker, args=(_NODE_TEST_QUEUE,), name='cbc-node-tests', daemon=True)
+            _NODE_TEST_WORKER = threading.Thread(
+                target=_worker, args=(_NODE_TEST_QUEUE,), name='cbc-node-tests', daemon=True
+            )
             _NODE_TEST_WORKER.start()
         if not _SUBSCRIPTION_WORKER or not _SUBSCRIPTION_WORKER.is_alive():
-            _SUBSCRIPTION_WORKER = threading.Thread(target=_worker, args=(_SUBSCRIPTION_QUEUE,), name='cbc-subscriptions', daemon=True)
+            _SUBSCRIPTION_WORKER = threading.Thread(
+                target=_worker, args=(_SUBSCRIPTION_QUEUE,), name='cbc-subscriptions', daemon=True
+            )
             _SUBSCRIPTION_WORKER.start()
 
 
@@ -325,11 +341,15 @@ def _persist_tasks():
     # 快照和提交按同一顺序串行化；磁盘锁本身不能阻止旧快照覆盖新状态。
     with _PERSIST_GUARD:
         with _GUARD:
-            payload = [public_task(task) | {
-                'request_id': task.get('request_id', ''),
-                'payload_digest': task.get('payload_digest', ''),
-                'requested_instance_id': task.get('requested_instance_id', task.get('instance_id', '')),
-            } for task in (_TASKS[task_id] for task_id in _ORDER if task_id in _TASKS)]
+            payload = [
+                public_task(task)
+                | {
+                    'request_id': task.get('request_id', ''),
+                    'payload_digest': task.get('payload_digest', ''),
+                    'requested_instance_id': task.get('requested_instance_id', task.get('instance_id', '')),
+                }
+                for task in (_TASKS[task_id] for task_id in _ORDER if task_id in _TASKS)
+            ]
         store._save(store.PRIVATE / 'tasks.json', payload)
 
 
@@ -381,7 +401,9 @@ def _lifecycle_worker(task_queue):
                     pending[key].append(task_id)
                 else:
                     pending[key] = deque([task_id])
-                    worker = threading.Thread(target=consume, args=(key,), name=f'cbc-instance-{key or "create"}', daemon=True)
+                    worker = threading.Thread(
+                        target=consume, args=(key,), name=f'cbc-instance-{key or "create"}', daemon=True
+                    )
                     workers.add(worker)
                     worker.start()
     finally:
@@ -406,8 +428,9 @@ def _run_task(task_id):
                 _dispatch(task)
         with _GUARD:
             cancelled = bool(task.get('cancel_requested'))
-        _finish(task, 'interrupted' if cancelled else 'succeeded',
-                '已取消，已完成的节点结果已保留。' if cancelled else '')
+        _finish(
+            task, 'interrupted' if cancelled else 'succeeded', '已取消，已完成的节点结果已保留。' if cancelled else ''
+        )
     except node_probe.ProbeCancelled as error:
         with _GUARD:
             task['result'] = error.result
@@ -415,8 +438,11 @@ def _run_task(task_id):
     except Exception as error:
         try:
             cancelled = bool(task.get('cancel_requested'))
-            _finish(task, 'interrupted' if cancelled else 'failed',
-                    '已取消，当前检测未完成，之前的结果已保留。' if cancelled else safe_error(error))
+            _finish(
+                task,
+                'interrupted' if cancelled else 'failed',
+                '已取消，当前检测未完成，之前的结果已保留。' if cancelled else safe_error(error),
+            )
         except Exception:
             with _GUARD:
                 task['state'] = 'failed'
@@ -498,6 +524,7 @@ def _dispatch_locked(task):
         _apply_proxy(task, store.instance_by_id(task['instance_id']), payload)
     elif kind == 'recover':
         import monitor
+
         monitor.recover(task)
     elif kind == 'refresh':
         _advance(task, '刷新订阅')
@@ -505,22 +532,29 @@ def _dispatch_locked(task):
         task['result'] = {'node_count': count}
     elif kind == 'add-subscription':
         _advance(task, '添加订阅')
-        subscription_id = store.add_subscription(str(payload.get('name', '')), str(payload.get('url', '')), catalog.fetch_proxies)
+        subscription_id = store.add_subscription(
+            str(payload.get('name', '')), str(payload.get('url', '')), catalog.fetch_proxies
+        )
         task['result'] = {'id': subscription_id}
     elif kind == 'update-subscription':
         _advance(task, '更新订阅地址')
-        updated = store.replace_subscription_url(payload['subscription_id'], payload['url'], catalog.fetch_proxies,
-                                                 name=payload.get('name'))
+        updated = store.replace_subscription_url(
+            payload['subscription_id'], payload['url'], catalog.fetch_proxies, name=payload.get('name')
+        )
         task['result'] = {'id': updated['id'], 'detail': '订阅已更新，原实例绑定已保留；变化的节点需重新确认。'}
     elif kind == 'test-nodes':
         _advance(task, '测试节点延迟')
         task['result'] = node_probe.test_subscription(
-            payload['subscription_id'], payload['node_ids'], on_progress=lambda *args: _probe_progress(task, *args),
+            payload['subscription_id'],
+            payload['node_ids'],
+            on_progress=lambda *args: _probe_progress(task, *args),
         )
     elif kind == 'check-node-quality':
         _advance(task, '检测节点出口 IP 质量')
         task['result'] = node_probe.check_quality(
-            payload['subscription_id'], payload['node_ids'], on_progress=lambda *args: _probe_progress(task, *args),
+            payload['subscription_id'],
+            payload['node_ids'],
+            on_progress=lambda *args: _probe_progress(task, *args),
         )
     else:
         raise ValueError('未知任务。')
@@ -557,13 +591,18 @@ def _create(task, payload):
             _validate_binding(payload)
             port = _allocate_port()
             cbc.create(slug, port)
-            store.update_instance(slug, lambda raw: raw.update({
-                'id': slug,
-                'display_name': display,
-                'created_at': store._now(),
-                'trashed_at': None,
-                'proxy_locked_at': None,
-            }))
+            store.update_instance(
+                slug,
+                lambda raw: raw.update(
+                    {
+                        'id': slug,
+                        'display_name': display,
+                        'created_at': store._now(),
+                        'trashed_at': None,
+                        'proxy_locked_at': None,
+                    }
+                ),
+            )
             task['instance_id'] = slug
             _write_binding(slug, payload)
             generation = store.set_run_intent(slug, False)
@@ -584,7 +623,9 @@ def _validate_binding(payload, resolve=False):
         if resolve:
             catalog.pin_endpoint(node)
     elif payload.get('mode') == 'socks':
-        port = store.validate_socks(payload.get('host'), payload.get('port'), payload.get('username'), payload.get('password'))
+        port = store.validate_socks(
+            payload.get('host'), payload.get('port'), payload.get('username'), payload.get('password')
+        )
         if resolve:
             cbc.manual_socks({**payload, 'port': port})
     else:
@@ -745,9 +786,17 @@ def runtime_snapshot(force=False):
         now = time.monotonic()
         if not force and now - _RUNTIME['at'] < 2:
             return _RUNTIME
-        snapshot = {'at': now, 'docker': {'ok': False, 'detail': 'Docker 暂时无法连接。'}, 'containers': None, 'health': {}, 'ids': {}}
+        snapshot = {
+            'at': now,
+            'docker': {'ok': False, 'detail': 'Docker 暂时无法连接。'},
+            'containers': None,
+            'health': {},
+            'ids': {},
+        }
         try:
-            result = cbc.docker('ps', '-a', '--filter', f'label={cbc.LABEL}', '--format', '{{json .}}', check=False, timeout=8)
+            result = cbc.docker(
+                'ps', '-a', '--filter', f'label={cbc.LABEL}', '--format', '{{json .}}', check=False, timeout=8
+            )
             if result.returncode == 0:
                 found, health, ids = {}, {}, {}
                 for line in result.stdout.splitlines():
@@ -758,7 +807,15 @@ def runtime_snapshot(force=False):
                     found[name] = item.get('State', '')
                     ids[name] = item.get('ID', '')
                     status = item.get('Status', '')
-                    health[name] = 'unhealthy' if '(unhealthy)' in status else 'healthy' if '(healthy)' in status else 'starting' if '(health: starting)' in status else None
+                    health[name] = (
+                        'unhealthy'
+                        if '(unhealthy)' in status
+                        else 'healthy'
+                        if '(healthy)' in status
+                        else 'starting'
+                        if '(health: starting)' in status
+                        else None
+                    )
                 snapshot.update(docker={'ok': True, 'detail': ''}, containers=found, health=health, ids=ids)
         except (OSError, ValueError, subprocess.TimeoutExpired):
             # Docker 异常仍返回实例元数据；不把命令输出带进网页。
@@ -834,7 +891,16 @@ def _memory(value):
         return None
     number = float(match.group(1))
     unit = match.group(2)
-    scale = {'B': 1 / 1048576, 'KiB': 1 / 1024, 'MiB': 1, 'GiB': 1024, 'TiB': 1024 * 1024, 'KB': 1 / 1024, 'MB': 1, 'GB': 1024}
+    scale = {
+        'B': 1 / 1048576,
+        'KiB': 1 / 1024,
+        'MiB': 1,
+        'GiB': 1024,
+        'TiB': 1024 * 1024,
+        'KB': 1 / 1024,
+        'MB': 1,
+        'GB': 1024,
+    }
     factor = scale.get(unit)
     if factor is None:
         return None
@@ -908,11 +974,23 @@ def _refresh_limits(items, snapshot):
         cached = _LIMIT_CACHE.get(slug)
         if not cached or now - cached[0] >= 60 or cached[2] != signature:
             needed.append((slug, signature))
-    names = [cbc.container(slug, role) for slug, _signature in needed for role in reversed(ROLES) if cbc.container(slug, role) in (snapshot['containers'] or {})]
+    names = [
+        cbc.container(slug, role)
+        for slug, _signature in needed
+        for role in reversed(ROLES)
+        if cbc.container(slug, role) in (snapshot['containers'] or {})
+    ]
     observed = {}
     if names and snapshot['docker']['ok']:
         try:
-            result = cbc.docker('inspect', '--format', '{"name":{{json .Name}},"memory":{{.HostConfig.Memory}}}', *names, check=False, timeout=8)
+            result = cbc.docker(
+                'inspect',
+                '--format',
+                '{"name":{{json .Name}},"memory":{{.HostConfig.Memory}}}',
+                *names,
+                check=False,
+                timeout=8,
+            )
             if result.returncode == 0:
                 for line in result.stdout.splitlines():
                     if line.strip():
@@ -968,6 +1046,7 @@ def list_instances():
 
 def _list_instances():
     import monitor
+
     snapshot = runtime_snapshot()
     report, containers = snapshot['docker'], snapshot['containers']
     items, config_errors = store.scan_instances()
@@ -984,10 +1063,21 @@ def _list_instances():
             usage = _instance_usage(item['slug'], stats)
         else:
             limits = _memory_limits(item['slug'])
-            usage = {'memory_mib': None, 'cpu_percent': None, 'memory_limit_mib': sum(limits.values()) if len(limits) == 3 else None, 'limits': limits}
+            usage = {
+                'memory_mib': None,
+                'cpu_percent': None,
+                'memory_limit_mib': sum(limits.values()) if len(limits) == 3 else None,
+                'limits': limits,
+            }
         exit_row = exits.get(item['slug'])
         if exit_row is not None and not store.exit_record_readable(exit_row):
-            config_errors.append({'id': item['id'], 'file': 'configs/private/exits.json', 'detail': '这个实例的出口记录格式不正确，原文件已保留。'})
+            config_errors.append(
+                {
+                    'id': item['id'],
+                    'file': 'configs/private/exits.json',
+                    'detail': '这个实例的出口记录格式不正确，原文件已保留。',
+                }
+            )
             exit_row = None
         verified_ip = store.exit_address((exit_row or {}).get('ip'))
         if verified_ip:
@@ -997,29 +1087,39 @@ def _list_instances():
             proxy = store.proxy_public(item['slug'])
         except (OSError, ValueError, TypeError, KeyError):
             proxy = {'mode': 'unknown', 'label': '代理配置损坏', 'stale': True}
-            config_errors.append({'id': item['id'], 'file': f"configs/{item['slug']}/proxy.json", 'detail': '代理配置无法读取，原文件已保留。'})
+            config_errors.append(
+                {
+                    'id': item['id'],
+                    'file': f'configs/{item["slug"]}/proxy.json',
+                    'detail': '代理配置无法读取，原文件已保留。',
+                }
+            )
         runtime = _runtime_state(item['slug'], containers, snapshot['health'])
-        rows.append({
-            'id': item['id'],
-            'display_name': item['display_name'],
-            'created_at': item['created_at'],
-            'historical': item['created_at'] is None,
-            'trashed_at': item['trashed_at'],
-            'deleting': bool((item.get('raw') or {}).get('deleting')),
-            'proxy_locked': store.proxy_locked(item.get('raw') or {}),
-            'port': item['port'],
-            'url': f"http://127.0.0.1:{item['port']}",
-            'runtime': runtime,
-            'proxy': proxy,
-            'exit': exit_row,
-            'usage': usage,
-            'diagnostics': _diagnostics(item['slug'], containers, snapshot['health']),
-            'monitor': monitor.public_status(item, runtime, exit_row, proxy),
-        })
+        rows.append(
+            {
+                'id': item['id'],
+                'display_name': item['display_name'],
+                'created_at': item['created_at'],
+                'historical': item['created_at'] is None,
+                'trashed_at': item['trashed_at'],
+                'deleting': bool((item.get('raw') or {}).get('deleting')),
+                'proxy_locked': store.proxy_locked(item.get('raw') or {}),
+                'port': item['port'],
+                'url': f'http://127.0.0.1:{item["port"]}',
+                'runtime': runtime,
+                'proxy': proxy,
+                'exit': exit_row,
+                'usage': usage,
+                'diagnostics': _diagnostics(item['slug'], containers, snapshot['health']),
+                'monitor': monitor.public_status(item, runtime, exit_row, proxy),
+            }
+        )
     running = sum(1 for row in rows if not row['trashed_at'] and row['runtime'] == 'running')
     visible = [row for row in rows if not row['trashed_at']]
     memory_values = [row['usage']['memory_mib'] for row in visible if row['runtime'] == 'running']
-    memory_total = round(sum(memory_values), 1) if memory_values and all(value is not None for value in memory_values) else None
+    memory_total = (
+        round(sum(memory_values), 1) if memory_values and all(value is not None for value in memory_values) else None
+    )
     warnings = _exit_warnings(rows)
     return {
         'docker': report,
@@ -1045,9 +1145,13 @@ def _exit_warnings(rows):
         exit_row = row.get('exit') or {}
         ip = exit_row.get('ip')
         if exit_row.get('status') == 'ok' and store.exit_address(ip) and not row.get('trashed_at'):
-            groups.setdefault(ip, []).append({
-                'id': row['id'], 'name': row['display_name'], 'checked_at': exit_row.get('checked_at'),
-            })
+            groups.setdefault(ip, []).append(
+                {
+                    'id': row['id'],
+                    'name': row['display_name'],
+                    'checked_at': exit_row.get('checked_at'),
+                }
+            )
     return [{'ip': ip, 'instances': items} for ip, items in groups.items() if len(items) > 1]
 
 
@@ -1058,13 +1162,22 @@ def _diagnostics(slug, containers, health=None):
     for role in ROLES:
         name = cbc.container(slug, role)
         state = containers.get(name) or 'absent'
-        rows.append({'role': role, 'state': (health or {}).get(name) if state == 'running' and (health or {}).get(name) in ('unhealthy', 'starting') else state})
+        rows.append(
+            {
+                'role': role,
+                'state': (health or {}).get(name)
+                if state == 'running' and (health or {}).get(name) in ('unhealthy', 'starting')
+                else state,
+            }
+        )
     return rows
 
 
 def _self_rss():
     try:
-        output = subprocess.run(['ps', '-o', 'rss=', '-p', str(os.getpid())], text=True, capture_output=True, check=False).stdout
+        output = subprocess.run(
+            ['ps', '-o', 'rss=', '-p', str(os.getpid())], text=True, capture_output=True, check=False
+        ).stdout
         return round(int(output.strip()) / 1024, 1)
     except (OSError, ValueError):
         return None
@@ -1096,7 +1209,24 @@ def _reload_browser_page(row):
     if not cbc.active(row['slug']):
         raise ValueError('实例没有在运行。')
     try:
-        result = cbc.docker('exec', '--user', '1000', cbc.container(row['slug'], 'browser'), 'env', 'DISPLAY=:0', 'xdotool', 'search', '--onlyvisible', '--class', 'chromium', 'windowfocus', 'key', 'F5', check=False, timeout=10)
+        result = cbc.docker(
+            'exec',
+            '--user',
+            '1000',
+            cbc.container(row['slug'], 'browser'),
+            'env',
+            'DISPLAY=:0',
+            'xdotool',
+            'search',
+            '--onlyvisible',
+            '--class',
+            'chromium',
+            'windowfocus',
+            'key',
+            'F5',
+            check=False,
+            timeout=10,
+        )
     except subprocess.TimeoutExpired:
         raise RuntimeError('没能刷新容器里的网页。可以改用“重连画面”。') from None
     if result.returncode:
@@ -1111,7 +1241,9 @@ def check_exit(instance_id):
         if row['trashed_at'] or _runtime_state(row['slug'], container_map()) != 'running':
             raise ValueError('实例没有在运行，不能检测出口。')
         probed = cbc.probe_proxy(row['slug'])
-        return store.save_exit(row['slug'], probed['status'], probed['ip'], probed['detail'], probed.get('country_code'))
+        return store.save_exit(
+            row['slug'], probed['status'], probed['ip'], probed['detail'], probed.get('country_code')
+        )
 
 
 def dismiss_exit_change(instance_id, change_id):

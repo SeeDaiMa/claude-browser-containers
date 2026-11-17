@@ -46,9 +46,10 @@ function savedLibraryPreferences(): LibraryPreferences {
       return {
         tab: values.tab === 'nodes' ? 'nodes' : 'subscriptions',
         source: typeof values.source === 'string' && values.source ? values.source : 'all',
-        country: typeof values.country === 'string' && /^(?:[A-Z]{2}|unknown)$/.test(values.country)
-          ? values.country
-          : 'all',
+        country:
+          typeof values.country === 'string' && /^(?:[A-Z]{2}|unknown)$/.test(values.country)
+            ? values.country
+            : 'all',
         query: typeof values.query === 'string' ? values.query : '',
       }
     }
@@ -71,11 +72,12 @@ export function SubscriptionsPage() {
     const view = params.get('view')
     return {
       ...saved,
-      tab: view === 'nodes'
-        ? 'nodes'
-        : view === 'subscriptions' || params.get('add') === '1'
-          ? 'subscriptions'
-          : saved.tab,
+      tab:
+        view === 'nodes'
+          ? 'nodes'
+          : view === 'subscriptions' || params.get('add') === '1'
+            ? 'subscriptions'
+            : saved.tab,
     }
   })
   const { tab, query } = preferences
@@ -124,7 +126,9 @@ export function SubscriptionsPage() {
     }
   }
 
-  function changeFilters(changes: Partial<Pick<LibraryPreferences, 'source' | 'country' | 'query'>>) {
+  function changeFilters(
+    changes: Partial<Pick<LibraryPreferences, 'source' | 'country' | 'query'>>,
+  ) {
     setNodePage(0)
     setPreferences((previous) => ({ ...previous, ...changes }))
     setSelectedNodeKeys(new Set())
@@ -152,12 +156,18 @@ export function SubscriptionsPage() {
     setNodeError('')
     Promise.all(
       subscriptions.map((subscription) => {
-        const key = JSON.stringify([subscription.updated_at, subscription.nodes_tested_at, subscription.nodes_quality_checked_at])
+        const key = JSON.stringify([
+          subscription.updated_at,
+          subscription.nodes_tested_at,
+          subscription.nodes_quality_checked_at,
+        ])
         const cached = cache.get(subscription.id)
         if (cached?.key === key) return cached.request
-        const request = api.nodes(subscription.id).then((payload) =>
-          payload.nodes.map((node) => ({ ...node, subscriptionId: subscription.id })),
-        )
+        const request = api
+          .nodes(subscription.id)
+          .then((payload) =>
+            payload.nodes.map((node) => ({ ...node, subscriptionId: subscription.id })),
+          )
         const entry = { key, request }
         cache.set(subscription.id, entry)
         void request.catch(() => {
@@ -171,7 +181,9 @@ export function SubscriptionsPage() {
           const nextNodes = rows.flat()
           setNodes(nextNodes)
           const available = new Set(nextNodes.filter((node) => node.supported).map(nodeKey))
-          setSelectedNodeKeys((previous) => new Set([...previous].filter((key) => available.has(key))))
+          setSelectedNodeKeys(
+            (previous) => new Set([...previous].filter((key) => available.has(key))),
+          )
         }
       })
       .catch((reason: Error) => {
@@ -193,8 +205,7 @@ export function SubscriptionsPage() {
     if (!name.trim()) validation.name = '请填写订阅名称。'
     try {
       const parsed = new URL(url)
-      if (parsed.protocol !== 'https:')
-        validation.url = '请填写 HTTPS 订阅地址。'
+      if (parsed.protocol !== 'https:') validation.url = '请填写 HTTPS 订阅地址。'
     } catch {
       validation.url = '请填写有效的订阅地址。'
     }
@@ -263,28 +274,45 @@ export function SubscriptionsPage() {
     () => nodes.map((node) => ({ ...node, country: countryFromNodeName(node.name) })),
     [nodes],
   )
-  const countries = useMemo(() => new Map(nodesWithCountry.map((node) => [
-    node.country?.code || 'unknown',
-    node.country?.label || '未识别国家／地区',
-  ])), [nodesWithCountry])
+  const countries = useMemo(
+    () =>
+      new Map(
+        nodesWithCountry.map((node) => [
+          node.country?.code || 'unknown',
+          node.country?.label || '未识别国家／地区',
+        ]),
+      ),
+    [nodesWithCountry],
+  )
   const country = countries.has(preferences.country) ? preferences.country : 'all'
   const searched = useNodeSearch(nodesWithCountry, query)
-  const visible = useMemo(() => searched.filter(
-    (node) =>
-      (source === 'all' || source === node.subscriptionId) &&
-      (country === 'all' || country === (node.country?.code || 'unknown')),
-  ), [searched, source, country])
+  const visible = useMemo(
+    () =>
+      searched.filter(
+        (node) =>
+          (source === 'all' || source === node.subscriptionId) &&
+          (country === 'all' || country === (node.country?.code || 'unknown')),
+      ),
+    [searched, source, country],
+  )
   const testable = useMemo(() => visible.filter((node) => node.supported), [visible])
-  const selectedNodes = useMemo(() => testable.filter((node) => selectedNodeKeys.has(nodeKey(node))), [testable, selectedNodeKeys])
+  const selectedNodes = useMemo(
+    () => testable.filter((node) => selectedNodeKeys.has(nodeKey(node))),
+    [testable, selectedNodeKeys],
+  )
   const sourceIds = useMemo(() => [...new Set(nodes.map((node) => node.subscriptionId))], [nodes])
   const busySources = new Map(sourceIds.map((id) => [id, isBusy(id) || qualityBusy(id)]))
   const pageCount = Math.max(1, Math.ceil(visible.length / NODE_PAGE_SIZE))
   const pageIndex = Math.min(nodePage, pageCount - 1)
   const pageNodes = visible.slice(pageIndex * NODE_PAGE_SIZE, (pageIndex + 1) * NODE_PAGE_SIZE)
-  useEffect(() => { setNodePage((current) => Math.min(current, pageCount - 1)) }, [pageCount])
+  useEffect(() => {
+    setNodePage((current) => Math.min(current, pageCount - 1))
+  }, [pageCount])
   const allVisibleSelected = testable.length > 0 && selectedNodes.length === testable.length
   const nodeActionsDisabled =
-    nodeLoading || !!nodeError || !selectedNodes.length ||
+    nodeLoading ||
+    !!nodeError ||
+    !selectedNodes.length ||
     selectedNodes.some((node) => busySources.get(node.subscriptionId))
   const testingSelected = selectedNodes.some((node) => !!activeTest(node.subscriptionId))
   const checkingSelected = selectedNodes.some((node) => qualityBusy(node.subscriptionId))
@@ -460,7 +488,9 @@ export function SubscriptionsPage() {
                       (instance) => instance.proxy.subscription_id === item.id,
                     )
                     const busy = isBusy(item.id)
-                    const active = tasks.find((task) => task.subscription_id === item.id && isActive(task))
+                    const active = tasks.find(
+                      (task) => task.subscription_id === item.id && isActive(task),
+                    )
                     return (
                       <tr className="cm-tr" key={item.id}>
                         <td>
@@ -479,7 +509,13 @@ export function SubscriptionsPage() {
                             <Badge
                               state={
                                 busy
-                                  ? { tone: 'info', spin: true, label: active ? TASK_LABELS[active.kind] || '处理中' : '处理中' }
+                                  ? {
+                                      tone: 'info',
+                                      spin: true,
+                                      label: active
+                                        ? TASK_LABELS[active.kind] || '处理中'
+                                        : '处理中',
+                                    }
                                   : item.last_error
                                     ? { tone: 'warn', dot: 'tri', label: '刷新失败 · 显示旧缓存' }
                                     : { tone: 'ok', label: '正常' }
@@ -630,15 +666,29 @@ export function SubscriptionsPage() {
           <details className="library-help">
             <summary>列表说明</summary>
             <ul className="rules">
-              <li>单个节点可直接点击行内按钮；勾选后可批量测速或检测 IP，表头复选框全选筛选结果中支持的节点（包含其他页）。翻页保留选择，切换筛选条件会清空选择。</li>
+              <li>
+                单个节点可直接点击行内按钮；勾选后可批量测速或检测
+                IP，表头复选框全选筛选结果中支持的节点（包含其他页）。翻页保留选择，切换筛选条件会清空选择。
+              </li>
               <li>国家／地区按节点名称中的国旗或名称识别，不代表实测出口 IP 归属。</li>
               <li>延迟为经节点访问测试网址的耗时，结果也会显示在创建实例时。</li>
-              <li>IP 属性和系数由 IPPure 提供，系数范围 0–100%，数值越低风险越低。IP 检测按节点依次进行，结果标注检测时间。</li>
+              <li>
+                IP 属性和系数由 IPPure 提供，系数范围 0–100%，数值越低风险越低。IP
+                检测按节点依次进行，结果标注检测时间。
+              </li>
             </ul>
           </details>
-          {tasks.filter((task) => isActive(task) && ['test-nodes', 'check-node-quality'].includes(task.kind)).map((task) => (
-            <NodeTaskNotice key={task.id} task={task} subscriptionName={subscriptionById.get(task.subscription_id || '')?.name} />
-          ))}
+          {tasks
+            .filter(
+              (task) => isActive(task) && ['test-nodes', 'check-node-quality'].includes(task.kind),
+            )
+            .map((task) => (
+              <NodeTaskNotice
+                key={task.id}
+                task={task}
+                subscriptionName={subscriptionById.get(task.subscription_id || '')?.name}
+              />
+            ))}
           {nodeError && (
             <Notice tone="danger" title="无法读取节点">
               {nodeError}
@@ -652,12 +702,29 @@ export function SubscriptionsPage() {
           ) : visible.length ? (
             <div className="cm-table-wrap">
               <div className="cm-row node-pagination" role="group" aria-label="节点分页">
-                <span className="cm-help">第 {pageIndex + 1} / {pageCount} 页 · 每页 {NODE_PAGE_SIZE} 个节点 · 全选包含其他页</span>
+                <span className="cm-help">
+                  第 {pageIndex + 1} / {pageCount} 页 · 每页 {NODE_PAGE_SIZE} 个节点 ·
+                  全选包含其他页
+                </span>
                 <span className="spacer" />
-                <Button small variant="ghost" aria-label="上一页节点" disabled={pageIndex === 0}
-                  onClick={() => setNodePage((current) => Math.max(0, current - 1))}>上一页</Button>
-                <Button small variant="ghost" aria-label="下一页节点" disabled={pageIndex + 1 >= pageCount}
-                  onClick={() => setNodePage((current) => Math.min(pageCount - 1, current + 1))}>下一页</Button>
+                <Button
+                  small
+                  variant="ghost"
+                  aria-label="上一页节点"
+                  disabled={pageIndex === 0}
+                  onClick={() => setNodePage((current) => Math.max(0, current - 1))}
+                >
+                  上一页
+                </Button>
+                <Button
+                  small
+                  variant="ghost"
+                  aria-label="下一页节点"
+                  disabled={pageIndex + 1 >= pageCount}
+                  onClick={() => setNodePage((current) => Math.min(pageCount - 1, current + 1))}
+                >
+                  下一页
+                </Button>
               </div>
               <table className="cm-table subscription-node-table">
                 <thead>
@@ -670,10 +737,15 @@ export function SubscriptionsPage() {
                         title="全选筛选结果中支持的节点（包含其他页）"
                         checked={allVisibleSelected}
                         ref={(input) => {
-                          if (input) input.indeterminate = selectedNodes.length > 0 && !allVisibleSelected
+                          if (input)
+                            input.indeterminate = selectedNodes.length > 0 && !allVisibleSelected
                         }}
                         disabled={nodeLoading || !!nodeError || !testable.length}
-                        onChange={(event) => setSelectedNodeKeys(new Set(event.target.checked ? testable.map(nodeKey) : []))}
+                        onChange={(event) =>
+                          setSelectedNodeKeys(
+                            new Set(event.target.checked ? testable.map(nodeKey) : []),
+                          )
+                        }
                       />
                     </th>
                     <th>所属订阅</th>
@@ -709,7 +781,9 @@ export function SubscriptionsPage() {
             </div>
           ) : (
             <Empty title={subscriptions.length ? '没有匹配的节点' : '还没有节点'} icon="proxy">
-              {subscriptions.length ? '换个关键词，或选择其他订阅、国家／地区。' : '先添加一个订阅。'}
+              {subscriptions.length
+                ? '换个关键词，或选择其他订阅、国家／地区。'
+                : '先添加一个订阅。'}
             </Empty>
           )}
         </>

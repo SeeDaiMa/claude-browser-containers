@@ -2,25 +2,41 @@ import type { NodeRow } from '../api/client'
 import { formatDate } from '../lib/format'
 import { Badge } from './Badge'
 
-export function NodeQualityBadge({ node, checking = false }: { node: NodeRow; checking?: boolean }) {
+export function NodeQualityBadge({
+  node,
+  checking = false,
+}: {
+  node: NodeRow
+  checking?: boolean
+}) {
   const quality = node.quality
   const title = quality
     ? `${quality.detail} 检测时间：${formatDate(quality.checked_at)}。IPPure 系数 0–100%，越低风险越低。`
-    : node.supported ? '点击「检测 IP」查询 IPPure 系数，0–100%，越低风险越低。' : node.reason
-  const label = !node.supported ? 'IPPure —'
-    : quality?.fraud_score != null ? `IPPure ${quality.fraud_score}%`
-      : checking ? 'IPPure 检测中…'
-        : quality?.status === 'failed' ? 'IPPure 检测失败'
-          : quality ? 'IPPure 未提供' : 'IPPure 未检测'
+    : node.supported
+      ? '点击「检测 IP」查询 IPPure 系数，0–100%，越低风险越低。'
+      : node.reason
+  const label = !node.supported
+    ? 'IPPure —'
+    : quality?.fraud_score != null
+      ? `IPPure ${quality.fraud_score}%`
+      : checking
+        ? 'IPPure 检测中…'
+        : quality?.status === 'failed'
+          ? 'IPPure 检测失败'
+          : quality
+            ? 'IPPure 未提供'
+            : 'IPPure 未检测'
 
   return (
     <span title={title} aria-busy={checking}>
-      <Badge state={{
-        tone: checking ? 'info' : quality?.status === 'failed' ? 'danger' : 'neutral',
-        label,
-        spin: checking,
-        dot: 'hollow',
-      }} />
+      <Badge
+        state={{
+          tone: checking ? 'info' : quality?.status === 'failed' ? 'danger' : 'neutral',
+          label,
+          spin: checking,
+          dot: 'hollow',
+        }}
+      />
     </span>
   )
 }

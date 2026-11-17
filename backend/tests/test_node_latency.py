@@ -30,18 +30,38 @@ def library(tmp_path, monkeypatch):
     monkeypatch.setattr(cbc, 'ROOT', tmp_path)
     (tmp_path / 'images.lock.json').write_text(json.dumps({'network': {'reference': 'fixture-network-image'}}))
     for key, value in {
-        'ROOT': tmp_path, 'CONFIGS': configs, 'PRIVATE': private,
-        'LIBRARY': private / 'library.json', 'EXITS': private / 'exits.json',
+        'ROOT': tmp_path,
+        'CONFIGS': configs,
+        'PRIVATE': private,
+        'LIBRARY': private / 'library.json',
+        'EXITS': private / 'exits.json',
         'BACKUPS': configs / 'backups',
     }.items():
         monkeypatch.setattr(store, key, value)
     raw = [
-        {'name': '同名节点', 'type': 'ss', 'server': '203.0.113.20', 'port': 443,
-         'cipher': 'aes-128-gcm', 'password': 'fixture-secret-one'},
-        {'name': '同名节点', 'type': 'ss', 'server': '203.0.113.21', 'port': 443,
-         'cipher': 'aes-128-gcm', 'password': 'fixture-secret-two'},
-        {'name': 'UDP 节点', 'type': 'hysteria2', 'server': '203.0.113.22', 'port': 443,
-         'password': 'fixture-secret-udp'},
+        {
+            'name': '同名节点',
+            'type': 'ss',
+            'server': '203.0.113.20',
+            'port': 443,
+            'cipher': 'aes-128-gcm',
+            'password': 'fixture-secret-one',
+        },
+        {
+            'name': '同名节点',
+            'type': 'ss',
+            'server': '203.0.113.21',
+            'port': 443,
+            'cipher': 'aes-128-gcm',
+            'password': 'fixture-secret-two',
+        },
+        {
+            'name': 'UDP 节点',
+            'type': 'hysteria2',
+            'server': '203.0.113.22',
+            'port': 443,
+            'password': 'fixture-secret-udp',
+        },
     ]
     identity = store.add_subscription('测试订阅', 'https://sub.example.test/?token=fixture-token', lambda _: raw)
     monkeypatch.setattr(core, '_TASKS', {})
@@ -134,7 +154,12 @@ def test_endpoint_uses_separate_queue_and_deduplicates_subscription(client, libr
 def test_endpoint_keeps_local_request_protection_and_rejects_stale_ids(client, library):
     path = f'/api/subscriptions/{library.id}/nodes/test'
     assert client.post(path, json={}).status_code == 403
-    assert client.post(path, headers={'X-CBC-Request': '1', 'Origin': 'https://external.example.test'}, json={}).status_code == 403
+    assert (
+        client.post(
+            path, headers={'X-CBC-Request': '1', 'Origin': 'https://external.example.test'}, json={}
+        ).status_code
+        == 403
+    )
     assert client.post(path, headers={'X-CBC-Request': '1'}, json={'node_ids': ['missing']}).status_code == 400
     assert not core._TASKS
 
@@ -164,9 +189,16 @@ def test_single_node_selection_keeps_cancelled_result_and_unselected_nodes(libra
 
 def test_queued_task_can_be_cancelled_before_it_starts(library):
     task = {
-        'id': 'tcancel', 'kind': 'test-nodes', 'instance_id': '', 'state': 'queued',
-        'phase': '测试节点延迟', 'phases': [{'name': '测试节点延迟', 'state': 'pending'}],
-        'error': '', 'result': {}, 'payload': {}, 'subscription_id': library.id,
+        'id': 'tcancel',
+        'kind': 'test-nodes',
+        'instance_id': '',
+        'state': 'queued',
+        'phase': '测试节点延迟',
+        'phases': [{'name': '测试节点延迟', 'state': 'pending'}],
+        'error': '',
+        'result': {},
+        'payload': {},
+        'subscription_id': library.id,
         'node_ids': [library.nodes[0]['id']],
     }
     core._TASKS[task['id']] = task
@@ -227,9 +259,11 @@ def test_docker_timeout_still_cleans_up_and_hides_private_diagnostics(library, m
 
 
 def test_bad_node_does_not_break_other_nodes_and_duplicate_names_use_ids(monkeypatch):
-    nodes = [{'id': 'n1', 'config': {'name': '同名', 'password': 'bad'}},
-             {'id': 'n2', 'config': {'name': '同名', 'password': 'good'}},
-             {'id': 'n3', 'config': {'name': '同名', 'password': 'timeout'}}]
+    nodes = [
+        {'id': 'n1', 'config': {'name': '同名', 'password': 'bad'}},
+        {'id': 'n2', 'config': {'name': '同名', 'password': 'good'}},
+        {'id': 'n3', 'config': {'name': '同名', 'password': 'timeout'}},
+    ]
     stdout = io.StringIO()
     monkeypatch.setattr(sys, 'stdin', io.StringIO(json.dumps(nodes)))
     monkeypatch.setattr(sys, 'stdout', stdout)
@@ -239,9 +273,14 @@ def test_bad_node_does_not_break_other_nodes_and_duplicate_names_use_ids(monkeyp
         return SimpleNamespace(returncode=int(payload['proxies'][0]['password'] == 'bad'))
 
     class Process:
-        def poll(self): return None
-        def terminate(self): pass
-        def wait(self, **kwargs): pass
+        def poll(self):
+            return None
+
+        def terminate(self):
+            pass
+
+        def wait(self, **kwargs):
+            pass
 
     class Opener:
         def open(self, url, **kwargs):

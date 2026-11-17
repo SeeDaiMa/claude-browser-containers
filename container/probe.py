@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Small network/CDP probes; runs in the guard's Chromium network namespace."""
+
 import base64
 import json
 import os
@@ -36,7 +37,11 @@ class CDP:
         self.sock = socket.create_connection(('127.0.0.1', 9222), 3)
         self.sock.settimeout(20)
         key = base64.b64encode(os.urandom(16)).decode()
-        self.sock.sendall((f'GET {path} HTTP/1.1\r\nHost: 127.0.0.1:9222\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\n\r\n').encode())
+        self.sock.sendall(
+            (
+                f'GET {path} HTTP/1.1\r\nHost: 127.0.0.1:9222\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\n\r\n'
+            ).encode()
+        )
         reply = b''
         while b'\r\n\r\n' not in reply:
             reply += self.sock.recv(1)
@@ -81,7 +86,10 @@ class CDP:
                 return reply.get('result', {})
 
     def evaluate(self, expression, user_gesture=False):
-        reply = self.call('Runtime.evaluate', {'expression': expression, 'awaitPromise': True, 'returnByValue': True, 'userGesture': user_gesture})
+        reply = self.call(
+            'Runtime.evaluate',
+            {'expression': expression, 'awaitPromise': True, 'returnByValue': True, 'userGesture': user_gesture},
+        )
         if 'exceptionDetails' in reply:
             raise RuntimeError(str(reply['exceptionDetails']))
         return reply['result'].get('value')
@@ -110,13 +118,21 @@ if __name__ == '__main__':
             current = client.evaluate('location.href')
             requested = urllib.parse.urlsplit(url)
             loaded = urllib.parse.urlsplit(current)
-            matches = current == url or (requested.scheme in ['http', 'https'] and loaded.scheme == requested.scheme and loaded.netloc == requested.netloc)
+            matches = current == url or (
+                requested.scheme in ['http', 'https']
+                and loaded.scheme == requested.scheme
+                and loaded.netloc == requested.netloc
+            )
             if matches and client.evaluate('document.readyState') == 'complete':
                 break
             time.sleep(0.2)
         else:
             raise RuntimeError('Page did not finish loading')
-        result = client.evaluate(sys.argv[3] if len(sys.argv) > 3 else '({title:document.title,text:document.body.innerText,url:location.href})')
+        result = client.evaluate(
+            sys.argv[3]
+            if len(sys.argv) > 3
+            else '({title:document.title,text:document.body.innerText,url:location.href})'
+        )
         if ignore:
             client.call('Security.setIgnoreCertificateErrors', {'ignore': False})
         print(json.dumps(result, ensure_ascii=False))
@@ -127,5 +143,11 @@ if __name__ == '__main__':
         print(json.dumps(client.call('Network.getAllCookies')))
     elif action == 'download':
         filename, content = sys.argv[2:4]
-        script = '(()=>{const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([' + json.dumps(content) + '],{type:"text/plain"}));a.download=' + json.dumps(filename) + ';document.body.append(a);a.click();return true})()'
+        script = (
+            '(()=>{const a=document.createElement("a");a.href=URL.createObjectURL(new Blob(['
+            + json.dumps(content)
+            + '],{type:"text/plain"}));a.download='
+            + json.dumps(filename)
+            + ';document.body.append(a);a.click();return true})()'
+        )
         print(json.dumps(client.evaluate(script, user_gesture=True)))

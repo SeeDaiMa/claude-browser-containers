@@ -86,9 +86,7 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
           >
             <Icon name={link.icon} />
             <span className="side-label">{link.label}</span>
-            {link.count !== undefined && (
-              <span className="cm-nav-item__count">{link.count}</span>
-            )}
+            {link.count !== undefined && <span className="cm-nav-item__count">{link.count}</span>}
           </Link>
         ))}
       </nav>
@@ -153,7 +151,8 @@ function SidebarInstances({ connected }: { connected: boolean }) {
 /** 底部状态区：运行概况、外观切换和版本信息合并为一个紧凑面板。 */
 function SidebarFooter({ connected, activeTasks }: { connected: boolean; activeTasks: number }) {
   const { data, error, resolvedTheme, setTheme } = useManager()
-  const dockerLabel = error || !data ? '状态未知' : data.docker.ok ? 'Docker 已连接' : 'Docker 未连接'
+  const dockerLabel =
+    error || !data ? '状态未知' : data.docker.ok ? 'Docker 已连接' : 'Docker 未连接'
   const nextTheme = resolvedTheme === 'dark' ? 'light' : 'dark'
   const nextThemeLabel = `切换为${nextTheme === 'dark' ? '深色' : '浅色'}主题`
 
@@ -166,7 +165,10 @@ function SidebarFooter({ connected, activeTasks }: { connected: boolean; activeT
           title={`${dockerLabel} · 查看运行环境`}
           aria-label={`${dockerLabel}，查看运行环境`}
         >
-          <span className={`cm-dot${connected ? ' tone-ok' : ' cm-dot--hollow'}`} aria-hidden="true" />
+          <span
+            className={`cm-dot${connected ? ' tone-ok' : ' cm-dot--hollow'}`}
+            aria-hidden="true"
+          />
           <span className="side-label">{dockerLabel}</span>
           <Icon name="chevR" />
         </Link>

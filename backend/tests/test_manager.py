@@ -36,7 +36,9 @@ proxies:
   - {name: gamma, type: anytls, server: example.com, port: 443, password: secret-gamma, udp: true}
 """
 
-JSON_SUB = json.dumps({'proxies': [{'name': 'delta', 'type': 'vless', 'server': '9.9.9.9', 'port': 443, 'uuid': 'secret-uuid'}]})
+JSON_SUB = json.dumps(
+    {'proxies': [{'name': 'delta', 'type': 'vless', 'server': '9.9.9.9', 'port': 443, 'uuid': 'secret-uuid'}]}
+)
 
 
 def test_yaml_json_and_flow_parse():
@@ -83,7 +85,10 @@ def test_refresh_failure_keeps_cache_and_public_view_hides_secrets(tmp_path, mon
     public = json.dumps(store.public_nodes(subscription_id), ensure_ascii=False)
     assert 'secret-alpha' not in public
     assert 'server' not in public
-    duplicate = catalog.proxies_from_clash(BLOCK + '\n  - name: alpha\n    type: vmess\n    server: 8.8.8.8\n    port: 10086\n    uuid: another-secret\n    alterId: 0\n    cipher: auto\n')
+    duplicate = catalog.proxies_from_clash(
+        BLOCK
+        + '\n  - name: alpha\n    type: vmess\n    server: 8.8.8.8\n    port: 10086\n    uuid: another-secret\n    alterId: 0\n    cipher: auto\n'
+    )
     store._store_nodes(subscription_id, duplicate)
     names = [item['name'] for item in store.public_nodes(subscription_id)]
     assert names.count('alpha') == 2
@@ -178,8 +183,11 @@ def test_exit_observation_rejects_invalid_claude_ip(monkeypatch):
 def test_exit_observation_ignores_invalid_country(monkeypatch):
     monkeypatch.setattr(cbc, 'addresses', lambda name: {'BRIDGE_IP': '10.231.1.3'})
     for code in ('XX', 'ZZ', '12', 'not-a-country', '中国'):
-        monkeypatch.setattr(cbc, 'docker', lambda *args, code=code, **kwargs: SimpleNamespace(
-            returncode=0, stdout=f'ip=198.51.100.20\nloc={code}\n'))
+        monkeypatch.setattr(
+            cbc,
+            'docker',
+            lambda *args, code=code, **kwargs: SimpleNamespace(returncode=0, stdout=f'ip=198.51.100.20\nloc={code}\n'),
+        )
         assert cbc.observe_exit_info('fixture') == {'ip': '198.51.100.20', 'country_code': None}
 
 
@@ -212,19 +220,35 @@ def test_probe_success_does_not_require_country_metadata(monkeypatch):
 
 def test_settings_exposes_only_public_configuration(tmp_path, monkeypatch):
     from app import main
+
     monkeypatch.setattr(main, 'ROOT', tmp_path)
-    monkeypatch.setattr(cbc, 'resource_env', lambda: {
-        'BROWSER_MEMORY_MIB': '1536', 'BROWSER_CPUS': '1.5',
-        'PROXY_MEMORY_MIB': '256', 'GUARD_MEMORY_MIB': '64',
-    })
-    (tmp_path / 'images.lock.json').write_text(json.dumps({
-        'browser': {'tag': 'cbc-chromium:1', 'reference': 'internal-digest'},
-        'network': {'tag': 'cbc-network:1'},
-    }))
+    monkeypatch.setattr(
+        cbc,
+        'resource_env',
+        lambda: {
+            'BROWSER_MEMORY_MIB': '1536',
+            'BROWSER_CPUS': '1.5',
+            'PROXY_MEMORY_MIB': '256',
+            'GUARD_MEMORY_MIB': '64',
+        },
+    )
+    (tmp_path / 'images.lock.json').write_text(
+        json.dumps(
+            {
+                'browser': {'tag': 'cbc-chromium:1', 'reference': 'internal-digest'},
+                'network': {'tag': 'cbc-network:1'},
+            }
+        )
+    )
     result = main.settings()
     assert result == {
         'version': '1.0.0',
-        'resources': {'browser_memory_mib': 1536.0, 'browser_cpus': 1.5, 'proxy_memory_mib': 256.0, 'guard_memory_mib': 64.0},
+        'resources': {
+            'browser_memory_mib': 1536.0,
+            'browser_cpus': 1.5,
+            'proxy_memory_mib': 256.0,
+            'guard_memory_mib': 64.0,
+        },
         'images': ['cbc-chromium:1', 'cbc-network:1'],
         'data_directory': str(tmp_path / 'data'),
         'config_directory': str(tmp_path / 'configs'),
@@ -234,8 +258,14 @@ def test_settings_exposes_only_public_configuration(tmp_path, monkeypatch):
 
 def test_refresh_task_exposes_target_without_payload():
     task = {
-        'id': 'trefresh', 'kind': 'refresh', 'instance_id': '',
-        'state': 'queued', 'phase': '刷新订阅', 'phases': [], 'error': '', 'result': {},
+        'id': 'trefresh',
+        'kind': 'refresh',
+        'instance_id': '',
+        'state': 'queued',
+        'phase': '刷新订阅',
+        'phases': [],
+        'error': '',
+        'result': {},
         'payload': {'subscription_id': 'sfixture', 'url': 'private-url', 'password': 'private-password'},
     }
     public = manager_core.public_task(task)
@@ -390,7 +420,9 @@ def test_locked_instance_rejects_proxy_change(tmp_path, monkeypatch):
     monkeypatch.setattr(cbc, 'compose', lambda *args, **kwargs: calls.append('compose'))
     task = {'phases': manager_core._phase_list('apply-proxy'), 'phase': '保存配置', 'result': {}}
     try:
-        manager_core._apply_proxy(task, row, {'mode': 'socks', 'host': '192.0.2.9', 'port': 1080, 'username': 'u', 'password': 'p'})
+        manager_core._apply_proxy(
+            task, row, {'mode': 'socks', 'host': '192.0.2.9', 'port': 1080, 'username': 'u', 'password': 'p'}
+        )
         raise AssertionError('锁定后的实例不应该能换代理')
     except ValueError as error:
         assert '已锁定' in str(error)
@@ -400,6 +432,7 @@ def test_locked_instance_rejects_proxy_change(tmp_path, monkeypatch):
 def test_locked_instance_rejects_proxy_route(tmp_path, monkeypatch):
     from fastapi.testclient import TestClient
     import app.main as main
+
     _redirect(tmp_path, monkeypatch)
     _isolate_queue(monkeypatch)
     _instance(tmp_path, proxy_locked_at='2026-11-14T00:00:00+00:00')
@@ -427,7 +460,9 @@ def test_unlocked_instance_only_saves_binding(tmp_path, monkeypatch):
     monkeypatch.setattr(cbc, 'compose', lambda *args, **kwargs: calls.append('compose'))
     monkeypatch.setattr(cbc, 'prepare', lambda *args, **kwargs: calls.append('prepare'))
     task = {'phases': manager_core._phase_list('apply-proxy'), 'phase': '保存配置', 'result': {}}
-    manager_core._apply_proxy(task, row, {'mode': 'socks', 'host': '192.0.2.9', 'port': 1080, 'username': 'u', 'password': 'p'})
+    manager_core._apply_proxy(
+        task, row, {'mode': 'socks', 'host': '192.0.2.9', 'port': 1080, 'username': 'u', 'password': 'p'}
+    )
     assert calls == [('save', 'idemo')]
     assert task['result']['applied'] is False
 
@@ -439,7 +474,9 @@ def test_unlocked_running_instance_must_stop_first(tmp_path, monkeypatch):
     monkeypatch.setattr(manager_core, '_write_binding', lambda *args: (_ for _ in ()).throw(AssertionError('不应保存')))
     task = {'phases': manager_core._phase_list('apply-proxy'), 'phase': '保存配置', 'result': {}}
     try:
-        manager_core._apply_proxy(task, row, {'mode': 'socks', 'host': '192.0.2.9', 'port': 1080, 'username': 'u', 'password': 'p'})
+        manager_core._apply_proxy(
+            task, row, {'mode': 'socks', 'host': '192.0.2.9', 'port': 1080, 'username': 'u', 'password': 'p'}
+        )
         raise AssertionError('运行中的实例应先停止')
     except ValueError as error:
         assert '先停止' in str(error)
@@ -546,8 +583,22 @@ def test_migration_locks_started_instances_only(tmp_path, monkeypatch):
     configs = tmp_path / 'configs'
     rows = {
         'claude-a': {'name': 'claude-a', 'port': 5801, 'network_index': 1},
-        'iused': {'name': 'iused', 'id': 'iused', 'display_name': '用过', 'created_at': '2026-11-13T00:00:00+00:00', 'port': 5803, 'network_index': 3},
-        'ifresh': {'name': 'ifresh', 'id': 'ifresh', 'display_name': '新建失败', 'created_at': '2026-11-13T00:00:00+00:00', 'port': 5804, 'network_index': 4},
+        'iused': {
+            'name': 'iused',
+            'id': 'iused',
+            'display_name': '用过',
+            'created_at': '2026-11-13T00:00:00+00:00',
+            'port': 5803,
+            'network_index': 3,
+        },
+        'ifresh': {
+            'name': 'ifresh',
+            'id': 'ifresh',
+            'display_name': '新建失败',
+            'created_at': '2026-11-13T00:00:00+00:00',
+            'port': 5804,
+            'network_index': 4,
+        },
     }
     for slug, raw in rows.items():
         (configs / slug).mkdir()
@@ -724,14 +775,20 @@ def test_memory_limit_uses_running_config_not_a_constant(tmp_path, monkeypatch):
 
 def test_host_memory_separates_vm_and_helpers(monkeypatch):
     class Result:
-        stdout = '\n'.join([
-            '9200 /Applications/Docker.app/Contents/MacOS/com.docker.virtualization',
-            '847152 /System/Library/Frameworks/Virtualization.framework/Versions/A/XPCServices/com.apple.Virtualization.VirtualMachine.xpc/Contents/MacOS/com.apple.Virtualization.VirtualMachine',
-            '135184 /Applications/Docker.app/Contents/MacOS/com.docker.backend',
-            '5600 /Library/Java/JavaVirtualMachines/zulu-17.jdk/Contents/Home/bin/java',
-        ]) + '\n'
+        stdout = (
+            '\n'.join(
+                [
+                    '9200 /Applications/Docker.app/Contents/MacOS/com.docker.virtualization',
+                    '847152 /System/Library/Frameworks/Virtualization.framework/Versions/A/XPCServices/com.apple.Virtualization.VirtualMachine.xpc/Contents/MacOS/com.apple.Virtualization.VirtualMachine',
+                    '135184 /Applications/Docker.app/Contents/MacOS/com.docker.backend',
+                    '5600 /Library/Java/JavaVirtualMachines/zulu-17.jdk/Contents/Home/bin/java',
+                ]
+            )
+            + '\n'
+        )
 
     import subprocess
+
     monkeypatch.setattr(subprocess, 'run', lambda *args, **kwargs: Result())
     report = manager_core._host_memory()
     assert report['docker_vm_rss_mib'] == round((9200 + 847152) / 1024, 1)

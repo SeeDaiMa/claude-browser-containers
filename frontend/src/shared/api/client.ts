@@ -154,11 +154,15 @@ export const api = {
   nodes: (id: string) => request<{ nodes: NodeRow[] }>(`/api/subscriptions/${id}/nodes`),
   testNodes: (id: string, node_ids: string[]) =>
     request<Task>(`/api/subscriptions/${id}/nodes/test`, {
-      method: 'POST', headers, body: JSON.stringify({ node_ids }),
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ node_ids }),
     }),
   checkNodeQuality: (id: string, node_ids: string[]) =>
     request<Task>(`/api/subscriptions/${id}/nodes/quality`, {
-      method: 'POST', headers, body: JSON.stringify({ node_ids }),
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ node_ids }),
     }),
   addSubscription: (name: string, url: string) =>
     request<Task>('/api/subscriptions', {
@@ -176,7 +180,9 @@ export const api = {
     }),
   updateSubscription: (id: string, name: string, url: string) =>
     request<Task>(`/api/subscriptions/${id}`, {
-      method: 'PATCH', headers, body: JSON.stringify({ name, url }),
+      method: 'PATCH',
+      headers,
+      body: JSON.stringify({ name, url }),
     }),
   cancelTask: (id: string) =>
     request<Task>(`/api/tasks/${id}/cancel`, { method: 'POST', headers, body: '{}' }),
@@ -214,7 +220,9 @@ export const api = {
     request<ExitInfo>(`/api/instances/${id}/exit`, { method: 'POST', headers, body: '{}' }),
   dismissExitChange: (id: string, change_id: string) =>
     request<ExitInfo>(`/api/instances/${id}/exit/dismiss`, {
-      method: 'POST', headers, body: JSON.stringify({ change_id }),
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ change_id }),
     }),
   reloadPage: (id: string) =>
     request<{ ok: boolean }>(`/api/instances/${id}/reload-page`, {

@@ -13,9 +13,19 @@ def test_proxy_and_node_secrets_are_removed_when_library_is_damaged(isolated):
     instance(isolated)
     store._write_proxy('ifixture', {'password': 'fixture-socks-password'})
     store.LIBRARY.write_text('{broken')
-    store._save(store._cache_path('source'), {'nodes': [{'config': {
-        'uuid': 'fixture-node-uuid', 'private-key': 'fixture-private-key',
-    }}]})
+    store._save(
+        store._cache_path('source'),
+        {
+            'nodes': [
+                {
+                    'config': {
+                        'uuid': 'fixture-node-uuid',
+                        'private-key': 'fixture-private-key',
+                    }
+                }
+            ]
+        },
+    )
     text = core.safe_error(ValueError('fixture-socks-password fixture-node-uuid fixture-private-key'))
     assert text == '[REDACTED] [REDACTED] [REDACTED]'
 

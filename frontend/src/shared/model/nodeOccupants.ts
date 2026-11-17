@@ -4,7 +4,10 @@ export type NodeOccupant = { id: string; name: string; trashed: boolean }
 export type NodeOccupancyIndex = Map<string, NodeOccupant[]>
 const EMPTY: NodeOccupant[] = []
 
-export function nodeOccupancyIndex(data: Overview | null | undefined, previous?: NodeOccupancyIndex): NodeOccupancyIndex | undefined {
+export function nodeOccupancyIndex(
+  data: Overview | null | undefined,
+  previous?: NodeOccupancyIndex,
+): NodeOccupancyIndex | undefined {
   if (!data) return undefined
   const index: NodeOccupancyIndex = new Map()
   for (const item of [...data.instances, ...data.trash]) {
@@ -16,8 +19,16 @@ export function nodeOccupancyIndex(data: Overview | null | undefined, previous?:
   }
   for (const [id, occupants] of index) {
     const old = previous?.get(id)
-    if (old && old.length === occupants.length && occupants.every((user, offset) =>
-      user.id === old[offset].id && user.name === old[offset].name && user.trashed === old[offset].trashed)) {
+    if (
+      old &&
+      old.length === occupants.length &&
+      occupants.every(
+        (user, offset) =>
+          user.id === old[offset].id &&
+          user.name === old[offset].name &&
+          user.trashed === old[offset].trashed,
+      )
+    ) {
       index.set(id, old)
     }
   }

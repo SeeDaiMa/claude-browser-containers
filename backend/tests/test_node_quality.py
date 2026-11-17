@@ -17,8 +17,7 @@ import store
 
 
 def payload(**changes):
-    return {'ip': '8.8.8.8', 'asn': 15169, 'isResidential': False,
-            'isBroadcast': False, 'fraudScore': 0, **changes}
+    return {'ip': '8.8.8.8', 'asn': 15169, 'isResidential': False, 'isBroadcast': False, 'fraudScore': 0, **changes}
 
 
 def test_zero_score_and_false_attributes_are_real_values_and_private_fields_are_not_copied():
@@ -64,8 +63,10 @@ def test_quality_request_uses_its_assigned_proxy_and_has_bounded_timeout(monkeyp
     assert handlers == [{'http': 'http://127.0.0.1:18081', 'https': 'http://127.0.0.1:18081'}]
 
 
-@pytest.mark.parametrize('error', [TimeoutError('private-secret'),
-                                 urllib.error.HTTPError(worker.IPPURE_URL, 429, 'private-secret', {}, None)])
+@pytest.mark.parametrize(
+    'error',
+    [TimeoutError('private-secret'), urllib.error.HTTPError(worker.IPPURE_URL, 429, 'private-secret', {}, None)],
+)
 def test_failed_request_keeps_fields_unknown_and_hides_diagnostics(monkeypatch, error):
     class Opener:
         def open(self, *args, **kwargs):
@@ -107,7 +108,10 @@ def test_results_preserve_latency_and_bindings_and_invalidate_rotated_nodes(libr
 def test_quality_endpoint_uses_probe_queue_and_local_request_protection(client, library):
     path = f'/api/subscriptions/{library.id}/nodes/quality'
     assert client.post(path, json={}).status_code == 403
-    assert client.post(path, headers={'X-CBC-Request': '1', 'Origin': 'https://elsewhere.test'}, json={}).status_code == 403
+    assert (
+        client.post(path, headers={'X-CBC-Request': '1', 'Origin': 'https://elsewhere.test'}, json={}).status_code
+        == 403
+    )
     for identities in [['missing'], [library.nodes[2]['id']], []]:
         assert client.post(path, headers={'X-CBC-Request': '1'}, json={'node_ids': identities}).status_code == 400
     assert not core._TASKS
@@ -123,8 +127,10 @@ def test_quality_endpoint_uses_probe_queue_and_local_request_protection(client, 
 
 def test_quality_summary_distinguishes_missing_fields_from_connection_failure(library, monkeypatch):
     selected = library.nodes[:2]
-    values = {selected[0]['id']: worker.normalize_quality({'ip': '8.8.8.8'}),
-              selected[1]['id']: worker.quality_failed('暂不可用')}
+    values = {
+        selected[0]['id']: worker.normalize_quality({'ip': '8.8.8.8'}),
+        selected[1]['id']: worker.quality_failed('暂不可用'),
+    }
 
     def measure(nodes, quality=False):
         assert quality and len(nodes) == 2
@@ -169,16 +175,24 @@ def test_quality_worker_does_not_fallback_when_one_node_is_invalid(monkeypatch):
         return SimpleNamespace(returncode=int(config['proxies'][0]['password'] == 'bad'))
 
     class Process:
-        def poll(self): return None
-        def terminate(self): pass
-        def wait(self, **kwargs): pass
+        def poll(self):
+            return None
+
+        def terminate(self):
+            pass
+
+        def wait(self, **kwargs):
+            pass
 
     class Opener:
-        def open(self, *args, **kwargs): return closing(io.BytesIO(b'{}'))
+        def open(self, *args, **kwargs):
+            return closing(io.BytesIO(b'{}'))
 
     def popen(args, **kwargs):
         config = json.loads(Path(args[-1]).read_text())
-        assert config['listeners'] == [{'name': 'quality-0', 'type': 'http', 'listen': '127.0.0.1', 'port': 18080, 'proxy': 'n2'}]
+        assert config['listeners'] == [
+            {'name': 'quality-0', 'type': 'http', 'listen': '127.0.0.1', 'port': 18080, 'proxy': 'n2'}
+        ]
         assert config['rules'] == ['MATCH,REJECT'] and not any(proxy['name'] == 'n1' for proxy in config['proxies'])
         return Process()
 

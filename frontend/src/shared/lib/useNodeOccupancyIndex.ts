@@ -5,6 +5,8 @@ import { nodeOccupancyIndex, type NodeOccupancyIndex } from '../model/nodeOccupa
 export function useNodeOccupancyIndex(data: Overview | null | undefined) {
   const previous = useRef<NodeOccupancyIndex>()
   const index = useMemo(() => nodeOccupancyIndex(data, previous.current), [data])
-  useLayoutEffect(() => { previous.current = index }, [index])
+  useLayoutEffect(() => {
+    previous.current = index
+  }, [index])
   return index
 }

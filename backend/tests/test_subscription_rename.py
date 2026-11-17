@@ -21,21 +21,41 @@ def subscription(tmp_path, monkeypatch):
     private = configs / 'private'
     private.mkdir(parents=True)
     for key, value in {
-        'ROOT': tmp_path, 'CONFIGS': configs, 'PRIVATE': private,
-        'LIBRARY': private / 'library.json', 'EXITS': private / 'exits.json',
+        'ROOT': tmp_path,
+        'CONFIGS': configs,
+        'PRIVATE': private,
+        'LIBRARY': private / 'library.json',
+        'EXITS': private / 'exits.json',
         'BACKUPS': configs / 'backups',
     }.items():
         monkeypatch.setattr(store, key, value)
-    nodes = [{'name': '测试节点', 'type': 'ss', 'server': '203.0.113.20', 'port': 443,
-              'cipher': 'aes-128-gcm', 'password': 'fixture-node-secret'}]
+    nodes = [
+        {
+            'name': '测试节点',
+            'type': 'ss',
+            'server': '203.0.113.20',
+            'port': 443,
+            'cipher': 'aes-128-gcm',
+            'password': 'fixture-node-secret',
+        }
+    ]
     url = 'https://sub.example.test/test?token=fixture-sub-token'
     identity = store.add_subscription('旧名称', url, lambda address: nodes)
     directory = configs / 'ifixture'
     directory.mkdir()
-    (directory / 'instance.json').write_text(json.dumps({
-        'name': 'ifixture', 'id': 'ifixture', 'display_name': '测试实例',
-        'port': 5803, 'network_index': 9, 'created_at': None, 'trashed_at': None,
-    }))
+    (directory / 'instance.json').write_text(
+        json.dumps(
+            {
+                'name': 'ifixture',
+                'id': 'ifixture',
+                'display_name': '测试实例',
+                'port': 5803,
+                'network_index': 9,
+                'created_at': None,
+                'trashed_at': None,
+            }
+        )
+    )
     node_id = store.public_nodes(identity)[0]['id']
     store.bind_subscription('ifixture', identity, node_id)
     library = store.load_library()
@@ -109,6 +129,7 @@ def test_url_update_keeps_identity_and_matching_binding(subscription, monkeypatc
         raise catalog.CatalogError('订阅下载失败')
 
     import catalog
+
     with pytest.raises(ValueError, match='下载失败'):
         store.replace_subscription_url(subscription.id, 'https://sub.example.test/again', fail)
     assert store.LIBRARY.read_bytes() == before
@@ -143,8 +164,9 @@ def test_refresh_keeps_a_name_changed_while_downloading(subscription):
 
 
 def test_patch_returns_only_public_fields(client, subscription):
-    response = client.patch(f'/api/subscriptions/{subscription.id}', headers={'X-CBC-Request': '1'},
-                            json={'name': '新的订阅名称'})
+    response = client.patch(
+        f'/api/subscriptions/{subscription.id}', headers={'X-CBC-Request': '1'}, json={'name': '新的订阅名称'}
+    )
     assert response.status_code == 200
     assert response.json() == {'id': subscription.id, 'name': '新的订阅名称'}
     assert 'fixture-sub-token' not in response.text and 'fixture-node-secret' not in response.text
@@ -155,8 +177,12 @@ def test_patch_returns_only_public_fields(client, subscription):
 def test_patch_keeps_local_request_protection(client, subscription):
     path = f'/api/subscriptions/{subscription.id}'
     assert client.patch(path, json={'name': '不可保存'}).status_code == 403
-    assert client.patch(path, headers={'X-CBC-Request': '1', 'Origin': 'https://external.example.test'},
-                        json={'name': '不可保存'}).status_code == 403
+    assert (
+        client.patch(
+            path, headers={'X-CBC-Request': '1', 'Origin': 'https://external.example.test'}, json={'name': '不可保存'}
+        ).status_code
+        == 403
+    )
     assert store.public_subscriptions()[0]['name'] == '旧名称'
 
 

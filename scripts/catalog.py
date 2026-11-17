@@ -1,4 +1,5 @@
 """把 Clash 订阅解析成可选节点。密码只留在权限为 600 的本地文件里。"""
+
 import ipaddress
 import json
 from pathlib import Path
@@ -74,9 +75,13 @@ def fetch_proxies(url):
     # 子进程提供总耗时边界，涵盖 DNS、重定向、慢响应头和 YAML 解析。
     # 地址和节点凭据仅经 stdin/stdout 传递，不进入进程参数或公开错误。
     try:
-        result = subprocess.run([sys.executable, str(Path(__file__).resolve()), '--fetch'],
-                                input=json.dumps({'url': url}), text=True, capture_output=True,
-                                timeout=SUBSCRIPTION_TIMEOUT)
+        result = subprocess.run(
+            [sys.executable, str(Path(__file__).resolve()), '--fetch'],
+            input=json.dumps({'url': url}),
+            text=True,
+            capture_output=True,
+            timeout=SUBSCRIPTION_TIMEOUT,
+        )
     except subprocess.TimeoutExpired:
         raise CatalogError(f'订阅下载超时（上限 {SUBSCRIPTION_TIMEOUT:g} 秒）。') from None
     except OSError:
@@ -174,13 +179,15 @@ def mihomo_config(node):
         'find-process-mode': 'off',
         'geo-auto-update': False,
         'geodata-mode': False,
-        'listeners': [{
-            'name': 'browser',
-            'type': 'socks',
-            'listen': '127.0.0.1',
-            'port': 1080,
-            'udp': False,
-        }],
+        'listeners': [
+            {
+                'name': 'browser',
+                'type': 'socks',
+                'listen': '127.0.0.1',
+                'port': 1080,
+                'udp': False,
+            }
+        ],
         'dns': {
             'enable': True,
             'listen': '127.0.0.1:1053',

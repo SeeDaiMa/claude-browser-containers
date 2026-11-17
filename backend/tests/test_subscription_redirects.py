@@ -15,8 +15,14 @@ def test_redirect_cannot_downgrade_or_change_protocol(target):
 
 def test_https_redirect_preserves_normal_request_headers():
     handler = getattr(catalog, '_HTTPSRedirectHandler', catalog.urllib.request.HTTPRedirectHandler)()
-    result = handler.redirect_request(Request('https://fixture.test/sub', headers={'User-Agent': 'clash-meta'}),
-                                      None, 302, 'Found', {}, 'https://cdn.fixture.test/sub')
+    result = handler.redirect_request(
+        Request('https://fixture.test/sub', headers={'User-Agent': 'clash-meta'}),
+        None,
+        302,
+        'Found',
+        {},
+        'https://cdn.fixture.test/sub',
+    )
     assert result.full_url == 'https://cdn.fixture.test/sub'
     assert result.get_header('User-agent') == 'clash-meta'
 

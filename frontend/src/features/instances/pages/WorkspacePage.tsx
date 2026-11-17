@@ -40,7 +40,9 @@ function useWorkspaceFrame(id: string) {
   useEffect(() => {
     let stopped = 0
     let visible = false
-    setFrame((current) => current.id === id && !current.visible ? current : { id, visible: false })
+    setFrame((current) =>
+      current.id === id && !current.visible ? current : { id, visible: false },
+    )
     const update = (next: boolean) => {
       if (visible === next) return
       visible = next
@@ -99,21 +101,36 @@ export function WorkspacePage() {
   const ipHistory = useRef<HTMLElement>(null)
   const connected = !!data?.docker.ok && !error
   const showFrame = useWorkspaceFrame(id)
-  const frameTask = tasks.find((task) => task.instance_id === id && ['start', 'restart'].includes(task.kind))
+  const frameTask = tasks.find(
+    (task) => task.instance_id === id && ['start', 'restart'].includes(task.kind),
+  )
   const frameTaskId = frameTask?.id
   const frameTaskState = frameTask?.state
-  const seenFrameTask = useRef<{ instanceId: string; taskId: string; state: string; keptFrame: boolean } | null>(null)
+  const seenFrameTask = useRef<{
+    instanceId: string
+    taskId: string
+    state: string
+    keptFrame: boolean
+  } | null>(null)
 
   useEffect(() => {
     const previous = seenFrameTask.current
-    const keptFrame = previous?.instanceId === id && previous.taskId === frameTaskId
-      ? previous.keptFrame && showFrame
-      : showFrame
-    seenFrameTask.current = frameTaskId && frameTaskState
-      ? { instanceId: id, taskId: frameTaskId, state: frameTaskState, keptFrame }
-      : null
-    if (previous?.instanceId === id && previous.taskId === frameTaskId &&
-        previous.keptFrame && showFrame && previous.state !== 'succeeded' && frameTaskState === 'succeeded') {
+    const keptFrame =
+      previous?.instanceId === id && previous.taskId === frameTaskId
+        ? previous.keptFrame && showFrame
+        : showFrame
+    seenFrameTask.current =
+      frameTaskId && frameTaskState
+        ? { instanceId: id, taskId: frameTaskId, state: frameTaskState, keptFrame }
+        : null
+    if (
+      previous?.instanceId === id &&
+      previous.taskId === frameTaskId &&
+      previous.keptFrame &&
+      showFrame &&
+      previous.state !== 'succeeded' &&
+      frameTaskState === 'succeeded'
+    ) {
       setReconnect((value) => value + 1)
     }
   }, [id, frameTaskId, frameTaskState, showFrame])
@@ -433,11 +450,13 @@ export function WorkspacePage() {
         />
       </div>
       <DockerNotice />
-      {showFrame && data.docker.ok && (!connected || ['unknown', 'stopped'].includes(item.runtime)) && (
-        <Notice tone="warn" title="正在确认实例状态">
-          已保留现有画面，等待后续检测确认运行状态。
-        </Notice>
-      )}
+      {showFrame &&
+        data.docker.ok &&
+        (!connected || ['unknown', 'stopped'].includes(item.runtime)) && (
+          <Notice tone="warn" title="正在确认实例状态">
+            已保留现有画面，等待后续检测确认运行状态。
+          </Notice>
+        )}
       <HealthNotice item={item} />
       {task && (
         <Notice title={runState(item, tasks, connected).label}>

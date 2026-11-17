@@ -1,4 +1,5 @@
 """订阅库、节点 ID 和实例元数据。不负责启动容器。"""
+
 import datetime
 import fcntl
 import hashlib
@@ -148,7 +149,9 @@ def load_library():
 
 def _node_id(subscription_id, node):
     material = {key: node[key] for key in sorted(node) if key != 'name'}
-    raw = json.dumps({'subscription': subscription_id, 'node': material}, sort_keys=True, ensure_ascii=False, default=str)
+    raw = json.dumps(
+        {'subscription': subscription_id, 'node': material}, sort_keys=True, ensure_ascii=False, default=str
+    )
     return 'n' + hashlib.sha256(raw.encode()).hexdigest()[:20]
 
 
@@ -196,12 +199,9 @@ def _node_summary(subscription_id):
     summary = {
         'count': len(nodes),
         'ids': frozenset(item.get('id') for item in nodes if isinstance(item, dict)),
-        'tested_at': max(
-            ((node.get('test') or {}).get('checked_at', '') for node in nodes), default=''
-        ) or None,
-        'quality_checked_at': max(
-            ((node.get('quality') or {}).get('checked_at', '') for node in nodes), default=''
-        ) or None,
+        'tested_at': max(((node.get('test') or {}).get('checked_at', '') for node in nodes), default='') or None,
+        'quality_checked_at': max(((node.get('quality') or {}).get('checked_at', '') for node in nodes), default='')
+        or None,
     }
     with _NODE_SUMMARIES_GUARD:
         _NODE_SUMMARIES[path] = (signature, summary)
@@ -218,17 +218,19 @@ def _store_nodes(subscription_id, raw_nodes):
         if identity in seen:
             continue
         seen.add(identity)
-        stored.append({
-            'id': identity,
-            'name': node['name'],
-            'type': node['type'],
-            'port': int(node['port']),
-            'supported': supported,
-            'reason': reason,
-            'config': node,
-            'test': previous.get(identity, {}).get('test'),
-            'quality': previous.get(identity, {}).get('quality'),
-        })
+        stored.append(
+            {
+                'id': identity,
+                'name': node['name'],
+                'type': node['type'],
+                'port': int(node['port']),
+                'supported': supported,
+                'reason': reason,
+                'config': node,
+                'test': previous.get(identity, {}).get('test'),
+                'quality': previous.get(identity, {}).get('quality'),
+            }
+        )
     _save(_cache_path(subscription_id), {'nodes': stored})
     return stored
 
@@ -276,17 +278,19 @@ def scan_instances():
             detail = str(error) if type(error) is ValueError else '实例配置无法读取或 JSON 已损坏。'
             errors.append({'id': slug, 'file': f'configs/{slug}/instance.json', 'detail': detail})
             continue
-        rows.append({
-            'id': data.get('id') or slug,
-            'slug': slug,
-            'display_name': data.get('display_name') or slug,
-            'created_at': data.get('created_at') if 'created_at' in data else None,
-            'trashed_at': data.get('trashed_at') or None,
-            'port': data['port'],
-            'network_index': data['network_index'],
-            'path': path,
-            'raw': data,
-        })
+        rows.append(
+            {
+                'id': data.get('id') or slug,
+                'slug': slug,
+                'display_name': data.get('display_name') or slug,
+                'created_at': data.get('created_at') if 'created_at' in data else None,
+                'trashed_at': data.get('trashed_at') or None,
+                'port': data['port'],
+                'network_index': data['network_index'],
+                'path': path,
+                'raw': data,
+            }
+        )
     return rows, errors
 
 
@@ -297,7 +301,9 @@ def _instances_on_disk():
 def require_complete_inventory():
     rows, errors = scan_instances()
     if errors:
-        raise ValueError('有实例配置损坏，无法安全分配端口和子网。请先修复：' + '、'.join(item['id'] for item in errors))
+        raise ValueError(
+            '有实例配置损坏，无法安全分配端口和子网。请先修复：' + '、'.join(item['id'] for item in errors)
+        )
     return rows
 
 
@@ -425,7 +431,9 @@ def node_users():
         node_id = record.get('node_id') if isinstance(record, dict) else ''
         if not node_id:
             continue
-        users.setdefault(node_id, []).append({'id': row['id'], 'name': row['display_name'], 'trashed': bool(row['trashed_at'])})
+        users.setdefault(node_id, []).append(
+            {'id': row['id'], 'name': row['display_name'], 'trashed': bool(row['trashed_at'])}
+        )
     return users
 
 
@@ -433,17 +441,19 @@ def public_nodes(subscription_id):
     users = node_users()
     rows = []
     for item in load_cached_nodes(subscription_id):
-        rows.append({
-            'id': item['id'],
-            'name': item['name'],
-            'type': item['type'],
-            'port': item['port'],
-            'supported': item.get('supported', True),
-            'reason': item.get('reason', ''),
-            'used_by': users.get(item['id'], []),
-            'test': item.get('test'),
-            'quality': item.get('quality'),
-        })
+        rows.append(
+            {
+                'id': item['id'],
+                'name': item['name'],
+                'type': item['type'],
+                'port': item['port'],
+                'supported': item.get('supported', True),
+                'reason': item.get('reason', ''),
+                'used_by': users.get(item['id'], []),
+                'test': item.get('test'),
+                'quality': item.get('quality'),
+            }
+        )
     return rows
 
 
@@ -451,15 +461,17 @@ def public_subscriptions():
     rows = []
     for sub in load_library()['subscriptions']:
         summary = _node_summary(sub['id'])
-        rows.append({
-            'id': sub['id'],
-            'name': sub.get('name', ''),
-            'node_count': summary['count'],
-            'nodes_tested_at': summary['tested_at'],
-            'nodes_quality_checked_at': summary['quality_checked_at'],
-            'updated_at': sub.get('updated_at'),
-            'last_error': sub.get('last_error', ''),
-        })
+        rows.append(
+            {
+                'id': sub['id'],
+                'name': sub.get('name', ''),
+                'node_count': summary['count'],
+                'nodes_tested_at': summary['tested_at'],
+                'nodes_quality_checked_at': summary['quality_checked_at'],
+                'updated_at': sub.get('updated_at'),
+                'last_error': sub.get('last_error', ''),
+            }
+        )
     return rows
 
 
@@ -511,8 +523,14 @@ def _backup(paths):
 
 
 def _migrate_read_permissions():
-    paths = [LIBRARY, EXITS, PRIVATE / 'tasks.json', CONFIGS / 'selection.json',
-             CONFIGS / 'subscription.json', CONFIGS / 'nodes.json']
+    paths = [
+        LIBRARY,
+        EXITS,
+        PRIVATE / 'tasks.json',
+        CONFIGS / 'selection.json',
+        CONFIGS / 'subscription.json',
+        CONFIGS / 'nodes.json',
+    ]
     paths.extend((PRIVATE / 'nodes').glob('*.json'))
     for path in paths:
         if path.exists():
@@ -568,13 +586,15 @@ def migrate():
                 if isinstance(loaded, list):
                     raw_nodes = loaded
             library = _empty_library()
-            library['subscriptions'].append({
-                'id': subscription_id,
-                'name': '已有订阅',
-                'url': url,
-                'updated_at': _now() if raw_nodes else None,
-                'last_error': '',
-            })
+            library['subscriptions'].append(
+                {
+                    'id': subscription_id,
+                    'name': '已有订阅',
+                    'url': url,
+                    'updated_at': _now() if raw_nodes else None,
+                    'last_error': '',
+                }
+            )
             _save(LIBRARY, library)
             if raw_nodes:
                 _store_nodes(subscription_id, raw_nodes)
@@ -656,9 +676,15 @@ def add_subscription(name, url, fetcher):
         if existing:
             existing.update(name=name, url=url, updated_at=_now(), last_error='')
         else:
-            library['subscriptions'].append({
-                'id': subscription_id, 'name': name, 'url': url, 'updated_at': _now(), 'last_error': '',
-            })
+            library['subscriptions'].append(
+                {
+                    'id': subscription_id,
+                    'name': name,
+                    'url': url,
+                    'updated_at': _now(),
+                    'last_error': '',
+                }
+            )
         _save(LIBRARY, library)
         try:
             _store_nodes(subscription_id, nodes)
@@ -728,7 +754,11 @@ def replace_subscription_url(subscription_id, url, fetcher, name=None):
             except OSError as error:
                 raise RuntimeError('订阅更新失败，原配置恢复未完成，请检查本机存储后重试。') from error
             raise
-        return {'id': subscription_id, 'name': target.get('name', ''), 'node_count': len(load_cached_nodes(subscription_id))}
+        return {
+            'id': subscription_id,
+            'name': target.get('name', ''),
+            'node_count': len(load_cached_nodes(subscription_id)),
+        }
 
 
 def rename_subscription(subscription_id, name):
@@ -796,8 +826,11 @@ def delete_subscription(subscription_id):
     with exclusive():
         names = {row['slug']: row['display_name'] for row in _instances_on_disk()}
         # 绑定独立于 instance.json 保存，损坏或缺少实例登记也不能绕过删除保护。
-        users = [names.get(slug, slug) for slug, record in selection_map().items()
-                 if isinstance(record, dict) and record.get('subscription_id') == subscription_id]
+        users = [
+            names.get(slug, slug)
+            for slug, record in selection_map().items()
+            if isinstance(record, dict) and record.get('subscription_id') == subscription_id
+        ]
         if users:
             raise ValueError('还有实例使用这个订阅：' + '、'.join(users) + '。请先修复相关配置或彻底删除对应实例。')
         library = load_library()
@@ -810,11 +843,18 @@ def delete_subscription(subscription_id):
 
 def bind_subscription(slug, subscription_id, node_id):
     with exclusive():
-        if not any(item['id'] == subscription_id for item in (load_library()['subscriptions'] if library_exists() else [])):
+        if not any(
+            item['id'] == subscription_id for item in (load_library()['subscriptions'] if library_exists() else [])
+        ):
             raise ValueError('订阅不存在，请重新选择。')
         node = materialize_node(subscription_id, node_id)
         selection = selection_map()
-        selection[slug] = {'mode': 'global', 'node': node['name'], 'node_id': node_id, 'subscription_id': subscription_id}
+        selection[slug] = {
+            'mode': 'global',
+            'node': node['name'],
+            'node_id': node_id,
+            'subscription_id': subscription_id,
+        }
         _write_selection(selection)
         _write_proxy(slug, _empty_proxy())
     return node['name']
@@ -867,11 +907,19 @@ def load_exits():
         ip = latest.get('ip')
         changed_at = record.get('changed_at')
         if isinstance(previous_ip, str) and isinstance(ip, str) and ip and isinstance(changed_at, str):
-            source = f"{slug}|{changed_at}|{previous_ip}|{ip}"
+            source = f'{slug}|{changed_at}|{previous_ip}|{ip}'
             change_id = hashlib.sha256(source.encode()).hexdigest()[:24]
-            record.update(change_id=change_id, history=[{
-                'id': change_id, 'previous_ip': previous_ip, 'ip': ip, 'changed_at': changed_at,
-            }])
+            record.update(
+                change_id=change_id,
+                history=[
+                    {
+                        'id': change_id,
+                        'previous_ip': previous_ip,
+                        'ip': ip,
+                        'changed_at': changed_at,
+                    }
+                ],
+            )
     return value
 
 
@@ -944,7 +992,13 @@ def save_exit(slug, status, ip, detail, country_code=None):
             last_success = None
         if not last_success and previous.get('status') == 'ok' and previous.get('ip'):
             last_success = {key: previous.get(key) for key in ('ip', 'country_code', 'checked_at')}
-        record = {'status': status, 'ip': ip, 'country_code': country_code if ip else None, 'detail': detail, 'checked_at': now}
+        record = {
+            'status': status,
+            'ip': ip,
+            'country_code': country_code if ip else None,
+            'detail': detail,
+            'checked_at': now,
+        }
         for key in ('previous_ip', 'changed_at', 'change_id', 'dismissed_change_id', 'dismissed_at'):
             if key in previous:
                 record[key] = previous[key]
@@ -979,14 +1033,17 @@ def dismiss_exit_change(slug, change_id):
 def set_run_intent(slug, running):
     """手动操作产生新代次，使已经排队的旧恢复任务失效。"""
     generation = secrets.token_hex(8)
+
     def change(raw):
         raw.update(desired_running=running, run_generation=generation, recovery={})
+
     update_instance(slug, change)
     return generation
 
 
 def mark_running(slug, generation):
     """启动成功后才记为应当运行；启动期间若有新的手动操作（代次已变），以新操作为准。"""
+
     def mark(raw):
         if raw.get('run_generation') == generation:
             raw['desired_running'] = True

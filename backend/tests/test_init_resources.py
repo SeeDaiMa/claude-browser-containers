@@ -36,14 +36,31 @@ def resources(isolated, monkeypatch):
                 raise RuntimeError('fixture compiler failure')
             output = next(str(arg).removesuffix(':/out') for arg in args if str(arg).endswith(':/out'))
             (Path(output) / 'cbc-clipboard-image').write_bytes(b'fixture compiled helper')
-        return SimpleNamespace(returncode=0, stdout=json.dumps([{
-            'Architecture': 'arm64', 'Id': 'fixture-image', 'Size': 123,
-        }]))
+        return SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps(
+                [
+                    {
+                        'Architecture': 'arm64',
+                        'Id': 'fixture-image',
+                        'Size': 123,
+                    }
+                ]
+            ),
+        )
 
     monkeypatch.setattr(cbc, 'docker', docker)
-    return SimpleNamespace(root=isolated, binary=binary, packed=packed, download=download,
-                           commands=commands, state=state, database=database,
-                           mihomo=isolated / 'container/mihomo', helper=cbc.CONFIGS / 'bin/cbc-clipboard-image')
+    return SimpleNamespace(
+        root=isolated,
+        binary=binary,
+        packed=packed,
+        download=download,
+        commands=commands,
+        state=state,
+        database=database,
+        mihomo=isolated / 'container/mihomo',
+        helper=cbc.CONFIGS / 'bin/cbc-clipboard-image',
+    )
 
 
 def test_init_prepares_verified_mihomo_and_builds_clipboard_helper(resources):

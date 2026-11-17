@@ -175,7 +175,9 @@ export function SettingsPage() {
               </button>
             ))}
           </div>
-          <span className="cm-help">主题保存在当前浏览器中；侧栏底部也可以快速切换日间 / 夜间。</span>
+          <span className="cm-help">
+            主题保存在当前浏览器中；侧栏底部也可以快速切换日间 / 夜间。
+          </span>
         </Card>
       </div>
 

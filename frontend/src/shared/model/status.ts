@@ -118,8 +118,7 @@ export function healthState(
 ): BadgeState {
   if (!connected || item.runtime === 'unknown')
     return { tone: 'neutral', dot: 'hollow', label: '状态未知' }
-  if (service && !service.running)
-    return { tone: 'warn', dot: 'tri', label: '监测已中断' }
+  if (service && !service.running) return { tone: 'warn', dot: 'tri', label: '监测已中断' }
   if (service?.error) return { tone: 'warn', dot: 'tri', label: '监测异常' }
   if (!item.monitor) return { tone: 'neutral', dot: 'hollow', label: '尚未监测' }
   switch (item.monitor.state) {

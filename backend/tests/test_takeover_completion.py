@@ -1,4 +1,5 @@
 """接手未完成开发后的功能闭环回归。仅使用临时目录及明确的 Docker/网络夹具。"""
+
 import queue
 from pathlib import Path
 import sys
@@ -22,9 +23,17 @@ from test_reliability import isolated as isolated, instance, snapshot, task
 
 
 def nodes():
-    return [{'name': name, 'type': 'ss', 'server': address, 'port': 443,
-             'cipher': 'aes-128-gcm', 'password': 'synthetic-only'}
-            for name, address in [('node-a', '8.8.8.8'), ('node-b', '1.1.1.1')]]
+    return [
+        {
+            'name': name,
+            'type': 'ss',
+            'server': address,
+            'port': 443,
+            'cipher': 'aes-128-gcm',
+            'password': 'synthetic-only',
+        }
+        for name, address in [('node-a', '8.8.8.8'), ('node-b', '1.1.1.1')]
+    ]
 
 
 def subscription():
@@ -98,9 +107,14 @@ def test_quality_progress_sends_small_selection_to_one_serial_worker(isolated, m
     identity, cached = subscription()
     events = []
     monkeypatch.setattr(node_probe.time, 'sleep', lambda seconds: events.append(('wait', seconds)))
-    monkeypatch.setattr(node_probe, '_measure', lambda selected, quality=False:
-                        events.append(('measure', [node['id'] for node in selected])) or
-                        {node['id']: {'status': 'partial', 'detail': 'fixture'} for node in selected})
+    monkeypatch.setattr(
+        node_probe,
+        '_measure',
+        lambda selected, quality=False: (
+            events.append(('measure', [node['id'] for node in selected]))
+            or {node['id']: {'status': 'partial', 'detail': 'fixture'} for node in selected}
+        ),
+    )
     result = node_probe.check_quality(identity, [row['id'] for row in cached], on_progress=lambda *_: True)
     assert events == [('measure', [node['id'] for node in cached])]
     assert result['completed'] == 2 and result['partial'] == 2
@@ -118,7 +132,9 @@ def test_recovery_country_mismatch_disconnects_proxy_and_pauses_retries(isolated
     monkeypatch.setattr(cbc, 'prepare', lambda *args, **kwargs: None)
     monkeypatch.setattr(cbc, 'compose', lambda *args, **kwargs: events.append('proxy-up'))
     monkeypatch.setattr(cbc, 'docker', lambda *args, **kwargs: events.append(args) or SimpleNamespace(returncode=0))
-    monkeypatch.setattr(cbc, 'probe_proxy', lambda _: {'status': 'ok', 'ip': '1.1.1.1', 'country_code': 'JP', 'detail': ''})
+    monkeypatch.setattr(
+        cbc, 'probe_proxy', lambda _: {'status': 'ok', 'ip': '1.1.1.1', 'country_code': 'JP', 'detail': ''}
+    )
     monkeypatch.setattr(geolocation, 'country_code', lambda value: 'US' if value == '8.8.8.8' else None)
     with pytest.raises(RuntimeError, match='已断开本实例代理'):
         monitor.recover(task('recover', generation=row['raw']['run_generation']))
@@ -180,9 +196,15 @@ def test_cli_start_shares_web_exit_check_and_records_the_exit(isolated, monkeypa
     monkeypatch.setattr(cbc, 'compose', lambda *args, **kwargs: commands.append(args))
     monkeypatch.setattr(cbc, 'observe_exit_info', lambda _: {'ip': '1.1.1.1', 'country_code': 'JP'})
     monkeypatch.setattr(geolocation, 'country_code', lambda _value: 'JP')
-    monkeypatch.setattr(cbc, 'docker', lambda *args, **kwargs: SimpleNamespace(
-        returncode=0, stdout=processes, stderr='',
-    ))
+    monkeypatch.setattr(
+        cbc,
+        'docker',
+        lambda *args, **kwargs: SimpleNamespace(
+            returncode=0,
+            stdout=processes,
+            stderr='',
+        ),
+    )
     opener = SimpleNamespace(open=lambda *_args, **_kwargs: SimpleNamespace(status=200))
     monkeypatch.setattr(cbc.urllib.request, 'build_opener', lambda *_args, **_kwargs: opener)
     cbc.start('ifixture')
@@ -207,8 +229,9 @@ def test_url_update_is_background_and_keeps_binding(isolated, monkeypatch):
     monkeypatch.setattr(catalog, 'fetch_proxies', fetch)
     new_url = 'https://fixture.example.test/updated?token=synthetic-only'
     with TestClient(main.app, base_url='http://127.0.0.1:5790') as client:
-        response = client.patch(f'/api/subscriptions/{identity}', headers={'X-CBC-Request': '1'},
-                                json={'name': '新名称', 'url': new_url})
+        response = client.patch(
+            f'/api/subscriptions/{identity}', headers={'X-CBC-Request': '1'}, json={'name': '新名称', 'url': new_url}
+        )
         assert response.status_code == 200
         accepted = response.json()
         assert accepted['kind'] == 'update-subscription' and accepted['state'] == 'queued'
@@ -240,7 +263,9 @@ def test_url_update_rolls_back_address_cache_and_binding_on_commit_failure(isola
     monkeypatch.setattr(store, '_save', fail_library)
     replacement = [{**node, 'password': 'rotated-synthetic-only'} for node in nodes()]
     with pytest.raises(OSError, match='提交失败'):
-        store.replace_subscription_url(identity, 'https://fixture.example.test/rotated', lambda _: replacement, name='新名称')
+        store.replace_subscription_url(
+            identity, 'https://fixture.example.test/rotated', lambda _: replacement, name='新名称'
+        )
     assert all(path.read_bytes() == original for path, original in before.items())
 
 
@@ -257,9 +282,14 @@ def test_updated_url_is_unique_and_old_address_can_be_added_without_overwriting(
     assert current[old_identity]['url'] == 'https://fixture.example.test/original'
 
 
-@pytest.mark.parametrize('body', [{'name': '', 'url': 'https://fixture.example.test/updated'},
-                                  {'name': '合法名称', 'url': 'http://fixture.example.test/updated'},
-                                  {'name': '合法名称', 'url': None}])
+@pytest.mark.parametrize(
+    'body',
+    [
+        {'name': '', 'url': 'https://fixture.example.test/updated'},
+        {'name': '合法名称', 'url': 'http://fixture.example.test/updated'},
+        {'name': '合法名称', 'url': None},
+    ],
+)
 def test_invalid_url_update_is_not_enqueued(isolated, monkeypatch, body):
     identity, _ = subscription()
     before = store.LIBRARY.read_bytes()

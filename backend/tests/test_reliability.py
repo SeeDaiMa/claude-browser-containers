@@ -32,7 +32,9 @@ def isolated(tmp_path, monkeypatch):
     monkeypatch.setattr(core, '_SUBSCRIPTION_QUEUE', queue.Queue())
     monkeypatch.setattr(core, '_LIMIT_CACHE', {})
     monkeypatch.setattr(core, '_STATS', {'at': 0, 'rows': {}, 'error': ''})
-    monkeypatch.setattr(core, '_RUNTIME', {'at': 0, 'docker': {'ok': False}, 'containers': None, 'health': {}, 'ids': {}})
+    monkeypatch.setattr(
+        core, '_RUNTIME', {'at': 0, 'docker': {'ok': False}, 'containers': None, 'health': {}, 'ids': {}}
+    )
     monkeypatch.setattr(core, '_host_memory', Mock(return_value={}))
     monkeypatch.setattr(core, '_self_rss', Mock(return_value=12))
     monkeypatch.setattr(monitor, '_STATE', {})
@@ -43,8 +45,17 @@ def isolated(tmp_path, monkeypatch):
 
 
 def instance(root, slug='ifixture', **extra):
-    raw = {'name': slug, 'id': slug, 'display_name': '测试实例', 'port': 5803, 'network_index': 9,
-           'proxy_locked_at': '2026-11-14T00:00:00Z', 'desired_running': True, 'run_generation': 'generation', **extra}
+    raw = {
+        'name': slug,
+        'id': slug,
+        'display_name': '测试实例',
+        'port': 5803,
+        'network_index': 9,
+        'proxy_locked_at': '2026-11-14T00:00:00Z',
+        'desired_running': True,
+        'run_generation': 'generation',
+        **extra,
+    }
     store._save(store.CONFIGS / slug / 'instance.json', raw)
     store._write_proxy(slug, {'host': '192.0.2.9', 'port': 1080, 'username': 'fixture', 'password': 'fixture'})
     data = root / 'data' / slug
@@ -54,17 +65,32 @@ def instance(root, slug='ifixture', **extra):
 
 
 def task(kind, instance_id='ifixture', **payload):
-    return {'kind': kind, 'instance_id': instance_id, 'payload': payload, 'result': {},
-            'phases': core._phase_list(kind), 'phase': core._PHASES[kind][0]}
+    return {
+        'kind': kind,
+        'instance_id': instance_id,
+        'payload': payload,
+        'result': {},
+        'phases': core._phase_list(kind),
+        'phase': core._PHASES[kind][0],
+    }
 
 
 def snapshot(slug='ifixture', broken=None, health=None):
-    containers = {cbc.container(slug, role): 'exited' if role == broken else 'running' for role in ('guard', 'proxy', 'browser')}
-    return {'docker': {'ok': True, 'detail': ''}, 'containers': containers,
-            'health': health or {}, 'ids': {name: name + '-id' for name in containers}}
+    containers = {
+        cbc.container(slug, role): 'exited' if role == broken else 'running' for role in ('guard', 'proxy', 'browser')
+    }
+    return {
+        'docker': {'ok': True, 'detail': ''},
+        'containers': containers,
+        'health': health or {},
+        'ids': {name: name + '-id' for name in containers},
+    }
 
 
-@pytest.mark.parametrize('bad', ['{invalid', '{}', '[]', '{"port":5804}', '{"port":true,"network_index":2}', '{"port":5804,"network_index":0}'])
+@pytest.mark.parametrize(
+    'bad',
+    ['{invalid', '{}', '[]', '{"port":5804}', '{"port":true,"network_index":2}', '{"port":5804,"network_index":0}'],
+)
 def test_bad_instance_is_reported_without_breaking_healthy_instance(isolated, monkeypatch, bad):
     instance(isolated)
     path = store.CONFIGS / 'ibad' / 'instance.json'
@@ -73,7 +99,9 @@ def test_bad_instance_is_reported_without_breaking_healthy_instance(isolated, mo
     assert store.instance_by_id('ifixture')['port'] == 5803
     with pytest.raises(ValueError, match='已损坏'):
         store.instance_by_id('ibad')
-    monkeypatch.setattr(core, 'runtime_snapshot', lambda: {'docker': {'ok': False}, 'containers': None, 'health': {}, 'ids': {}})
+    monkeypatch.setattr(
+        core, 'runtime_snapshot', lambda: {'docker': {'ok': False}, 'containers': None, 'health': {}, 'ids': {}}
+    )
     result = core.list_instances()
     assert [row['id'] for row in result['instances']] == ['ifixture']
     assert result['config_errors'][0]['id'] == 'ibad'
@@ -83,15 +111,34 @@ def test_bad_instance_is_reported_without_breaking_healthy_instance(isolated, mo
     assert path.read_text() == bad
 
 
-@pytest.mark.parametrize('change', [
-    {'host': ''}, {'host': 'https://node.example'}, {'host': 'node.example:1080'}, {'host': 'bad host'},
-    {'port': 0}, {'port': True}, {'port': 'not-a-number'}, {'port': None},
-    {'username': ''}, {'password': 'x' * 256}, {'mode': 'missing'},
-])
+@pytest.mark.parametrize(
+    'change',
+    [
+        {'host': ''},
+        {'host': 'https://node.example'},
+        {'host': 'node.example:1080'},
+        {'host': 'bad host'},
+        {'port': 0},
+        {'port': True},
+        {'port': 'not-a-number'},
+        {'port': None},
+        {'username': ''},
+        {'password': 'x' * 256},
+        {'mode': 'missing'},
+    ],
+)
 def test_invalid_creation_has_no_instance_side_effect(isolated, monkeypatch, change):
     create = Mock()
     monkeypatch.setattr(cbc, 'create', create)
-    payload = {'display_name': '测试', 'mode': 'socks', 'host': '192.0.2.9', 'port': 1080, 'username': 'u', 'password': 'p', **change}
+    payload = {
+        'display_name': '测试',
+        'mode': 'socks',
+        'host': '192.0.2.9',
+        'port': 1080,
+        'username': 'u',
+        'password': 'p',
+        **change,
+    }
     with pytest.raises(ValueError):
         core._create(task('create', ''), payload)
     create.assert_not_called()
@@ -104,21 +151,36 @@ def test_missing_subscription_node_is_rejected_before_create(isolated, monkeypat
     create = Mock()
     monkeypatch.setattr(cbc, 'create', create)
     with pytest.raises(ValueError, match='节点已消失'):
-        core._create(task('create', ''), {'display_name': '测试', 'mode': 'subscription', 'subscription_id': 'sfixture', 'node_id': 'missing'})
+        core._create(
+            task('create', ''),
+            {'display_name': '测试', 'mode': 'subscription', 'subscription_id': 'sfixture', 'node_id': 'missing'},
+        )
     create.assert_not_called()
 
 
 def test_valid_creation_retains_config_when_network_boot_fails(isolated, monkeypatch):
     monkeypatch.setattr(core, '_require_docker', lambda: None)
     monkeypatch.setattr(core, '_allocate_port', lambda: 5803)
+
     def create(slug, port):
         instance(isolated, slug, proxy_locked_at=None, desired_running=False, port=port)
+
     monkeypatch.setattr(cbc, 'create', create)
     monkeypatch.setattr(core, '_boot', Mock(side_effect=RuntimeError('代理连接失败')))
     monkeypatch.setattr(cbc, 'compose', Mock())
     current = task('create', '')
     with pytest.raises(RuntimeError, match='代理连接失败'):
-        core._create(current, {'display_name': '测试', 'mode': 'socks', 'host': '192.0.2.9', 'port': 1080, 'username': 'u', 'password': 'p'})
+        core._create(
+            current,
+            {
+                'display_name': '测试',
+                'mode': 'socks',
+                'host': '192.0.2.9',
+                'port': 1080,
+                'username': 'u',
+                'password': 'p',
+            },
+        )
     rows = store._instances_on_disk()
     assert len(rows) == 1 and rows[0]['id'] == current['instance_id']
     assert not store.proxy_locked(rows[0]['raw'])
@@ -130,7 +192,9 @@ def test_restart_preflights_before_stop(isolated, monkeypatch, failure):
     instance(isolated, trashed_at='2026-11-14T00:00:00Z' if failure == 'trash' else None)
     stop = Mock()
     monkeypatch.setattr(core, '_stop_running', stop)
-    monkeypatch.setattr(core, '_require_docker', Mock(side_effect=RuntimeError('Docker 不可用') if failure == 'docker' else None))
+    monkeypatch.setattr(
+        core, '_require_docker', Mock(side_effect=RuntimeError('Docker 不可用') if failure == 'docker' else None)
+    )
     monkeypatch.setattr(cbc, 'proxy_plan', Mock(side_effect=ValueError('节点不可用') if failure == 'node' else None))
     with pytest.raises((ValueError, RuntimeError)):
         core._dispatch(task('restart'))
@@ -141,17 +205,21 @@ def test_same_instance_probe_and_reload_cannot_overlap_or_resurrect_deleted_exit
     instance(isolated)
     monkeypatch.setattr(core, 'container_map', lambda: snapshot()['containers'])
     started, release, removal_started = threading.Event(), threading.Event(), threading.Event()
+
     def probe(_slug):
         started.set()
         assert release.wait(5)
         return {'status': 'ok', 'ip': '192.0.2.1', 'detail': ''}
+
     monkeypatch.setattr(cbc, 'probe_proxy', probe)
     monkeypatch.setattr(cbc, 'active', lambda _slug: False)
     monkeypatch.setattr(cbc, 'down', Mock())
+
     def remove():
         removal_started.set()
         core._dispatch(task('trash'))
         core._dispatch(task('purge', confirm_name='测试实例'))
+
     with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
         checking = pool.submit(core.check_exit, 'ifixture')
         assert started.wait(5)
@@ -211,7 +279,8 @@ def test_exit_history_tracks_transitions_and_preserves_dismissal(isolated, monke
     assert returned['changed_at'] == changed['changed_at']
     assert returned['change_id'] != returned['dismissed_change_id']
     assert [(entry['previous_ip'], entry['ip']) for entry in returned['history']] == [
-        ('192.0.2.1', '192.0.2.2'), ('192.0.2.2', '192.0.2.1'),
+        ('192.0.2.1', '192.0.2.2'),
+        ('192.0.2.2', '192.0.2.1'),
     ]
     assert store.load_exits()['ifixture'] == returned
 
@@ -233,15 +302,20 @@ def test_stale_dismissal_cannot_hide_a_new_change_or_another_instance(isolated):
 
 @pytest.mark.parametrize('status', ['ok', 'unknown'])
 def test_legacy_exit_change_is_visible_then_persisted_without_inventing_history(isolated, status):
-    legacy = {'status': status, 'ip': '192.0.2.2' if status == 'ok' else None,
-              'previous_ip': '192.0.2.1', 'changed_at': '2026-11-14T01:00:00+00:00',
-              'last_success': {'ip': '192.0.2.2', 'country_code': 'JP', 'checked_at': '2026-11-14T02:00:00+00:00'}}
+    legacy = {
+        'status': status,
+        'ip': '192.0.2.2' if status == 'ok' else None,
+        'previous_ip': '192.0.2.1',
+        'changed_at': '2026-11-14T01:00:00+00:00',
+        'last_success': {'ip': '192.0.2.2', 'country_code': 'JP', 'checked_at': '2026-11-14T02:00:00+00:00'},
+    }
     store._save(store.EXITS, {'ifixture': legacy})
     before = store.EXITS.read_bytes()
     loaded = store.load_exits()['ifixture']
     assert loaded['change_id'] == store.load_exits()['ifixture']['change_id']
-    assert loaded['history'] == [{'id': loaded['change_id'], 'previous_ip': '192.0.2.1',
-                                  'ip': '192.0.2.2', 'changed_at': legacy['changed_at']}]
+    assert loaded['history'] == [
+        {'id': loaded['change_id'], 'previous_ip': '192.0.2.1', 'ip': '192.0.2.2', 'changed_at': legacy['changed_at']}
+    ]
     assert store.EXITS.read_bytes() == before
     store.dismiss_exit_change('ifixture', loaded['change_id'])
     persisted = json.loads(store.EXITS.read_text())['ifixture']
@@ -271,7 +345,12 @@ def test_exit_dismiss_api_preserves_locked_binding_and_requires_local_request(is
         assert response.json()['dismissed_change_id'] == changed['change_id']
         assert response.json()['history'] == changed['history']
         assert client.post(path, json={'change_id': changed['change_id']}, headers=headers).status_code == 200
-        assert client.post('/api/instances/missing/exit/dismiss', json={'change_id': changed['change_id']}, headers=headers).status_code == 400
+        assert (
+            client.post(
+                '/api/instances/missing/exit/dismiss', json={'change_id': changed['change_id']}, headers=headers
+            ).status_code
+            == 400
+        )
     assert (store.CONFIGS / 'ifixture' / 'instance.json').read_bytes() == instance_before
     assert (store.CONFIGS / 'ifixture' / 'proxy.json').read_bytes() == proxy_before
     cbc.docker.assert_not_called()
@@ -300,17 +379,24 @@ def test_overview_batches_commands_and_shares_cache(isolated, monkeypatch):
     instance(isolated, 'ib', port=5804, network_index=10)
     commands = []
     containers = [name for slug in ('ia', 'ib') for name in snapshot(slug)['containers']]
+
     def docker(*args, **_kwargs):
         commands.append(args[0])
         if args[0] == 'ps':
-            output = '\n'.join(json.dumps({'Names': name, 'State': 'running', 'Status': 'Up 1 minute (healthy)', 'ID': name + '-id'}) for name in containers)
+            output = '\n'.join(
+                json.dumps({'Names': name, 'State': 'running', 'Status': 'Up 1 minute (healthy)', 'ID': name + '-id'})
+                for name in containers
+            )
         elif args[0] == 'stats':
-            output = '\n'.join(json.dumps({'Name': name, 'CPUPerc': '1%', 'MemUsage': '2MiB / 64MiB'}) for name in containers)
+            output = '\n'.join(
+                json.dumps({'Name': name, 'CPUPerc': '1%', 'MemUsage': '2MiB / 64MiB'}) for name in containers
+            )
         elif args[0] == 'inspect':
             output = '\n'.join(json.dumps({'name': '/' + name, 'memory': 64 * 1024 * 1024}) for name in containers)
         else:
             raise AssertionError(args)
         return SimpleNamespace(returncode=0, stdout=output, stderr='')
+
     monkeypatch.setattr(cbc, 'docker', docker)
     result = core.list_instances()
     assert commands == ['ps', 'inspect', 'stats']
@@ -345,7 +431,14 @@ def test_monitor_waits_for_repeated_component_failure(isolated, monkeypatch):
     queued.assert_called_once_with('recover', 'ifixture', payload={'generation': 'generation'})
 
 
-@pytest.mark.parametrize('raw', [{'desired_running': False}, {'trashed_at': '2026-11-14T00:00:00Z'}, {'desired_running': False, 'recovery': {'attempts': 1}}])
+@pytest.mark.parametrize(
+    'raw',
+    [
+        {'desired_running': False},
+        {'trashed_at': '2026-11-14T00:00:00Z'},
+        {'desired_running': False, 'recovery': {'attempts': 1}},
+    ],
+)
 def test_monitor_never_restarts_manually_stopped_or_trashed_instances(isolated, monkeypatch, raw):
     instance(isolated, **raw)
     monkeypatch.setattr(core, 'runtime_snapshot', lambda: snapshot(broken='proxy'))
@@ -400,7 +493,9 @@ def test_proxy_only_recovery_preserves_browser_and_guard(isolated, monkeypatch):
     monkeypatch.setattr(cbc, 'prepare', prepare)
     monkeypatch.setattr(cbc, 'compose', compose)
     monkeypatch.setattr(core, '_stop_running', stop)
-    monkeypatch.setattr(cbc, 'probe_proxy', lambda _slug: {'status': 'ok', 'ip': '192.0.2.1', 'country_code': 'US', 'detail': ''})
+    monkeypatch.setattr(
+        cbc, 'probe_proxy', lambda _slug: {'status': 'ok', 'ip': '192.0.2.1', 'country_code': 'US', 'detail': ''}
+    )
     monkeypatch.setattr(cbc, 'require_same_country', lambda _slug, _observation: None)
     core._dispatch(task('recover', generation='generation'))
     stop.assert_not_called()
@@ -469,8 +564,17 @@ def test_periodic_probe_is_spaced_and_unknown_does_not_trigger_recovery(isolated
 def test_reprepare_updates_proxy_target_and_firewall_together(isolated, monkeypatch):
     instance(isolated)
     store._write_proxy('ifixture', {'host': 'node.example', 'port': 1080, 'username': 'u', 'password': 'p'})
-    monkeypatch.setattr(cbc, 'planned_browser', lambda *_args, **_kwargs: {
-        'image': 'browser', 'network_image': 'network', 'revision': 'unchanged', 'resources': dict(cbc.DEFAULTS), 'addresses': cbc.addresses('ifixture')})
+    monkeypatch.setattr(
+        cbc,
+        'planned_browser',
+        lambda *_args, **_kwargs: {
+            'image': 'browser',
+            'network_image': 'network',
+            'revision': 'unchanged',
+            'resources': dict(cbc.DEFAULTS),
+            'addresses': cbc.addresses('ifixture'),
+        },
+    )
     address = ['192.0.2.1']
     monkeypatch.setattr(cbc.socket, 'getaddrinfo', lambda *_args: [(None, None, None, None, (address[0], 1080))])
     cbc.prepare('ifixture')
@@ -488,7 +592,9 @@ def test_reprepare_updates_proxy_target_and_firewall_together(isolated, monkeypa
 
 def test_docker_outage_pauses_monitor_without_changing_intent(isolated, monkeypatch):
     instance(isolated)
-    monkeypatch.setattr(core, 'runtime_snapshot', lambda: {'docker': {'ok': False}, 'containers': None, 'health': {}, 'ids': {}})
+    monkeypatch.setattr(
+        core, 'runtime_snapshot', lambda: {'docker': {'ok': False}, 'containers': None, 'health': {}, 'ids': {}}
+    )
     queued = Mock()
     monkeypatch.setattr(core, 'enqueue', queued)
     monitor.tick()
@@ -536,9 +642,11 @@ def test_retry_delay_starts_when_slow_attempt_finishes(isolated, monkeypatch):
     instance(isolated)
     clock = [100.0]
     monkeypatch.setattr(monitor.time, 'time', lambda: clock[0])
+
     def slow_failure(_slug):
         clock[0] = 500.0
         raise RuntimeError('fixture timeout')
+
     monkeypatch.setattr(core, '_preflight_boot', slow_failure)
     with pytest.raises(RuntimeError):
         core._dispatch(task('recover', generation='generation'))
@@ -556,9 +664,16 @@ def test_storage_lock_wait_does_not_stall_overview_requests(isolated, monkeypatc
     instance(isolated, desired_running=False)
     monkeypatch.setattr(store, 'migrate', lambda: None)
     monkeypatch.setattr(core, 'ensure_worker', lambda: None)
-    monkeypatch.setattr(core, 'runtime_snapshot', lambda: {
-        'docker': {'ok': False}, 'containers': None, 'health': {}, 'ids': {},
-    })
+    monkeypatch.setattr(
+        core,
+        'runtime_snapshot',
+        lambda: {
+            'docker': {'ok': False},
+            'containers': None,
+            'health': {},
+            'ids': {},
+        },
+    )
     entered = threading.Event()
     rename_instance = core.rename_instance
 
@@ -571,8 +686,12 @@ def test_storage_lock_wait_does_not_stall_overview_requests(isolated, monkeypatc
         with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
             # The caller thread owns the real flock while the ASGI request tries to write.
             with store.exclusive():
-                writing = pool.submit(client.patch, '/api/instances/ifixture',
-                                      headers={'X-CBC-Request': '1'}, json={'display_name': '新名称'})
+                writing = pool.submit(
+                    client.patch,
+                    '/api/instances/ifixture',
+                    headers={'X-CBC-Request': '1'},
+                    json={'display_name': '新名称'},
+                )
                 assert entered.wait(3)
                 reading = pool.submit(client.get, '/api/instances')
                 try:
@@ -591,7 +710,7 @@ def test_storage_lock_wait_does_not_stall_overview_requests(isolated, monkeypatc
 
 def test_monitor_scans_inventory_once_per_tick(isolated, monkeypatch):
     for number in range(3):
-        instance(isolated, f'ifixture{number}', port=5810+number, network_index=20+number)
+        instance(isolated, f'ifixture{number}', port=5810 + number, network_index=20 + number)
     monkeypatch.setattr(core, 'runtime_snapshot', lambda: snapshot())
     scan = Mock(wraps=store.scan_instances)
     monkeypatch.setattr(store, 'scan_instances', scan)

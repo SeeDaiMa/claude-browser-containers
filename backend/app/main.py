@@ -1,4 +1,5 @@
 """本机实例管理台。只监听 127.0.0.1。"""
+
 import json
 import sys
 from pathlib import Path, PurePosixPath
@@ -24,6 +25,7 @@ HOSTS = {'127.0.0.1:5790', 'localhost:5790'}
 ORIGINS = {'http://127.0.0.1:5790', 'http://localhost:5790'}
 DIST = ROOT / 'frontend' / 'dist'
 NODE_PROBE_BODY_BYTES = 256 * 1024
+
 
 @asynccontextmanager
 async def lifespan(_app):
@@ -126,11 +128,16 @@ def nodes(subscription_id: str):
 @app.post('/api/subscriptions/{subscription_id}/nodes/test')
 async def test_nodes(subscription_id: str, request: Request):
     body = await _body(request, max_bytes=NODE_PROBE_BODY_BYTES)
+
     def operation():
         selected = node_probe.select_nodes(subscription_id, body.get('node_ids'))
-        return manager_core.enqueue('test-nodes', payload={
-            'subscription_id': subscription_id, 'node_ids': [node['id'] for node in selected],
-        })
+        return manager_core.enqueue(
+            'test-nodes',
+            payload={
+                'subscription_id': subscription_id,
+                'node_ids': [node['id'] for node in selected],
+            },
+        )
 
     return await run_in_threadpool(operation)
 
@@ -138,11 +145,16 @@ async def test_nodes(subscription_id: str, request: Request):
 @app.post('/api/subscriptions/{subscription_id}/nodes/quality')
 async def check_node_quality(subscription_id: str, request: Request):
     body = await _body(request, max_bytes=NODE_PROBE_BODY_BYTES)
+
     def operation():
         selected = node_probe.select_nodes(subscription_id, body.get('node_ids'))
-        return manager_core.enqueue('check-node-quality', payload={
-            'subscription_id': subscription_id, 'node_ids': [node['id'] for node in selected],
-        })
+        return manager_core.enqueue(
+            'check-node-quality',
+            payload={
+                'subscription_id': subscription_id,
+                'node_ids': [node['id'] for node in selected],
+            },
+        )
 
     return await run_in_threadpool(operation)
 
@@ -150,9 +162,12 @@ async def check_node_quality(subscription_id: str, request: Request):
 @app.post('/api/subscriptions')
 async def add_subscription(request: Request):
     body = await _body(request)
+
     def operation():
         name, url = store.validate_subscription(body.get('name'), body.get('url'))
-        return manager_core.enqueue('add-subscription', request_id=str(body.get('request_id', '')), payload={'name': name, 'url': url})
+        return manager_core.enqueue(
+            'add-subscription', request_id=str(body.get('request_id', '')), payload={'name': name, 'url': url}
+        )
 
     return await run_in_threadpool(operation)
 
@@ -166,6 +181,7 @@ def refresh_subscription(subscription_id: str):
 @app.patch('/api/subscriptions/{subscription_id}')
 async def rename_subscription(subscription_id: str, request: Request):
     body = await _body(request)
+
     def operation():
         updated = None
         if 'name' in body:
@@ -175,10 +191,14 @@ async def rename_subscription(subscription_id: str, request: Request):
             if not current:
                 raise ValueError('订阅不存在。')
             _name, url = store.validate_subscription(body.get('name', current.get('name')), body.get('url'))
-            return manager_core.enqueue('update-subscription', payload={
-                'subscription_id': subscription_id, 'url': url,
-                **({'name': body['name']} if 'name' in body else {}),
-            })
+            return manager_core.enqueue(
+                'update-subscription',
+                payload={
+                    'subscription_id': subscription_id,
+                    'url': url,
+                    **({'name': body['name']} if 'name' in body else {}),
+                },
+            )
         if 'name' in body:
             updated = store.rename_subscription(subscription_id, body.get('name'))
         if updated is None:
@@ -202,8 +222,13 @@ def delete_subscription(subscription_id: str):
 @app.post('/api/instances')
 async def create_instance(request: Request):
     body = await _body(request)
+
     def operation():
-        return manager_core.enqueue('create', request_id=str(body.get('request_id', '')), payload=_proxy_payload(body) | {'display_name': body.get('display_name', '')})
+        return manager_core.enqueue(
+            'create',
+            request_id=str(body.get('request_id', '')),
+            payload=_proxy_payload(body) | {'display_name': body.get('display_name', '')},
+        )
 
     return await run_in_threadpool(operation)
 
@@ -236,6 +261,7 @@ def restore_instance(instance_id: str):
 @app.post('/api/instances/{instance_id}/purge')
 async def purge_instance(instance_id: str, request: Request):
     body = await _body(request)
+
     def operation():
         return manager_core.enqueue('purge', instance_id, payload={'confirm_name': body.get('confirm_name', '')})
 
@@ -250,6 +276,7 @@ def reconfirm_proxy(instance_id: str):
 @app.post('/api/instances/{instance_id}/proxy')
 async def apply_proxy(instance_id: str, request: Request):
     body = await _body(request)
+
     def operation():
         row = store.instance_by_id(instance_id)
         manager_core.ensure_proxy_editable(row)
@@ -267,6 +294,7 @@ async def apply_proxy(instance_id: str, request: Request):
 @app.patch('/api/instances/{instance_id}')
 async def rename_instance(instance_id: str, request: Request):
     body = await _body(request)
+
     def operation():
         return manager_core.rename_instance(instance_id, body.get('display_name', ''))
 
@@ -289,6 +317,7 @@ def reload_page(instance_id: str):
 @app.post('/api/instances/{instance_id}/exit/dismiss')
 async def dismiss_exit_change(instance_id: str, request: Request):
     body = await _body(request)
+
     def operation():
         return manager_core.dismiss_exit_change(instance_id, body.get('change_id'))
 

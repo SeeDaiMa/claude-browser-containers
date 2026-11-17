@@ -19,8 +19,13 @@ def test_malformed_resource_line_reports_location_without_echoing_value(isolated
 
 
 def test_reads_do_not_repeat_permission_writes_and_startup_repairs_legacy_files(isolated, monkeypatch):
-    paths = [store.LIBRARY, store.EXITS, store.PRIVATE / 'tasks.json',
-             store.CONFIGS / 'selection.json', store._cache_path('fixture')]
+    paths = [
+        store.LIBRARY,
+        store.EXITS,
+        store.PRIVATE / 'tasks.json',
+        store.CONFIGS / 'selection.json',
+        store._cache_path('fixture'),
+    ]
     for path, text in zip(paths, ['{"subscriptions": []}', '{}', '[]', '{}', '{"nodes": []}'], strict=True):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text)

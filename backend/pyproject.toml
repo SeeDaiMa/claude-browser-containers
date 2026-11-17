@@ -29,3 +29,6 @@ line-length = 120
 
 [tool.ruff.lint]
 select = ["F", "E9", "B"]
+
+[tool.ruff.format]
+quote-style = "single"

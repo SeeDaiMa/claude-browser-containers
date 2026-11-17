@@ -1,4 +1,5 @@
 """轮询接口的节点摘要缓存：文件不变时不重复解析，任何写入后立即反映新内容。"""
+
 import sys
 from pathlib import Path
 

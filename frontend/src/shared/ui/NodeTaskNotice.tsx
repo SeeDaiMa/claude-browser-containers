@@ -4,11 +4,21 @@ import { api, type Task } from '../api/client'
 import { progressText } from '../model/status'
 import { Button, Notice } from './Controls'
 
-export function NodeTaskNotice({ task, subscriptionName }: { task: Task; subscriptionName?: string }) {
+export function NodeTaskNotice({
+  task,
+  subscriptionName,
+}: {
+  task: Task
+  subscriptionName?: string
+}) {
   const { refresh, notify } = useManager()
   const [pending, setPending] = useState(false)
   const cancelling = pending || task.cancel_requested
-  const title = cancelling ? '正在取消节点检测' : task.state === 'queued' ? '节点检测在排队' : '正在检测节点'
+  const title = cancelling
+    ? '正在取消节点检测'
+    : task.state === 'queued'
+      ? '节点检测在排队'
+      : '正在检测节点'
   return (
     <Notice
       title={subscriptionName ? `${subscriptionName} · ${title}` : title}

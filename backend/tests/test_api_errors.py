@@ -14,6 +14,7 @@ def client(isolated, monkeypatch):
     monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1]))
     from fastapi.testclient import TestClient
     from app.main import app
+
     monkeypatch.setattr(store, 'migrate', lambda: None)
     monkeypatch.setattr(core, 'ensure_worker', lambda: None)
     with TestClient(app, base_url='http://127.0.0.1:5790', raise_server_exceptions=False) as result:

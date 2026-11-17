@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { formatAgo, formatCountry, formatCpu, formatDate, formatMemory, joinNames } from './format'
 
-afterEach(() => { vi.useRealTimers() })
+afterEach(() => {
+  vi.useRealTimers()
+})
 
 describe('数值和地区显示', () => {
   it.each([null, undefined])('未知资源 %s 不显示为零', (value) => {

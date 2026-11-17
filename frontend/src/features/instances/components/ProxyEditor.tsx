@@ -189,14 +189,18 @@ export function ProxyEditor({
   }, [value.subscriptionId, updated, tested, qualityChecked])
 
   const searched = useNodeSearch(nodes, query)
-  const visible = useMemo(() => sortNodes(
-    searched.filter(
-      (node) =>
-        // 已选中的节点始终保留，避免过滤后看不到自己的选择。
-        (!onlyUsable || isUsable(node) || node.id === value.nodeId),
-    ),
-    sort,
-  ), [searched, onlyUsable, value.nodeId, sort])
+  const visible = useMemo(
+    () =>
+      sortNodes(
+        searched.filter(
+          (node) =>
+            // 已选中的节点始终保留，避免过滤后看不到自己的选择。
+            !onlyUsable || isUsable(node) || node.id === value.nodeId,
+        ),
+        sort,
+      ),
+    [searched, onlyUsable, value.nodeId, sort],
+  )
   const testedCount = nodes.filter((node) => node.test?.status === 'ok').length
   const selected = nodes.find((node) => node.id === value.nodeId)
   const testable = visible.filter((node) => node.supported)
@@ -389,7 +393,12 @@ export function ProxyEditor({
               icon="pulse"
               busy={!!testing}
               disabled={disabled || loading || !testable.length || isBusy(value.subscriptionId)}
-              onClick={() => void testNodes(value.subscriptionId, testable.map((node) => node.id))}
+              onClick={() =>
+                void testNodes(
+                  value.subscriptionId,
+                  testable.map((node) => node.id),
+                )
+              }
             >
               {testing ? '正在测速…' : '全部测速'}
             </Button>
@@ -399,7 +408,12 @@ export function ProxyEditor({
               icon="shield"
               busy={checkingQuality}
               disabled={disabled || loading || !testable.length || isBusy(value.subscriptionId)}
-              onClick={() => void checkQuality(value.subscriptionId, testable.map((node) => node.id))}
+              onClick={() =>
+                void checkQuality(
+                  value.subscriptionId,
+                  testable.map((node) => node.id),
+                )
+              }
             >
               {checkingQuality ? '正在检测 IP…' : '全部检测 IP'}
             </Button>

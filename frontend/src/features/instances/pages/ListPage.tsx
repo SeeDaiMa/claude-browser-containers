@@ -198,7 +198,9 @@ export function ListPage() {
                             <InstanceDetails
                               item={item}
                               tab={detailTabs[item.id] || 'diagnostics'}
-                              onTabChange={(tab) => setDetailTabs((current) => ({ ...current, [item.id]: tab }))}
+                              onTabChange={(tab) =>
+                                setDetailTabs((current) => ({ ...current, [item.id]: tab }))
+                              }
                             />
                           </div>
                         </td>

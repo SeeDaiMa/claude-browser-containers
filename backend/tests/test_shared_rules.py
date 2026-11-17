@@ -1,4 +1,5 @@
 """D1 的兼容性测试：只使用临时配置和合成 Docker 返回值。"""
+
 import json
 from types import SimpleNamespace
 from unittest.mock import MagicMock, Mock
@@ -13,8 +14,10 @@ from test_reliability import isolated as isolated, instance
 
 @pytest.mark.parametrize('name', ['', 'x' * 41, None, 3])
 def test_subscription_name_validation_keeps_the_same_error(isolated, name):
-    for operation in (lambda: store.validate_subscription(name, 'https://fixture.test/sub'),
-                      lambda: store.rename_subscription('missing', name)):
+    for operation in (
+        lambda: store.validate_subscription(name, 'https://fixture.test/sub'),
+        lambda: store.rename_subscription('missing', name),
+    ):
         with pytest.raises(ValueError, match='订阅名称需要 1–40 个字符'):
             operation()
 
@@ -63,9 +66,15 @@ def test_create_skips_overlapping_subnet_with_one_docker_inventory(isolated, mon
     def docker(*args, **kwargs):
         commands.append(args[:2])
         assert args[:2] in [('network', 'ls'), ('network', 'inspect')]
-        return SimpleNamespace(stdout='fixture-network' if args[1] == 'ls' else json.dumps([
-            {'IPAM': {'Config': [{'Subnet': '10.231.1.0/24'}, {'Subnet': '2001:db8::/32'}]}},
-        ]))
+        return SimpleNamespace(
+            stdout='fixture-network'
+            if args[1] == 'ls'
+            else json.dumps(
+                [
+                    {'IPAM': {'Config': [{'Subnet': '10.231.1.0/24'}, {'Subnet': '2001:db8::/32'}]}},
+                ]
+            )
+        )
 
     monkeypatch.setattr(cbc, 'docker', docker)
     socket = MagicMock()
@@ -92,9 +101,19 @@ def test_port_conflict_preserves_create_exception_and_allocator_skips_it(isolate
 
 def test_subscription_binding_writes_an_independent_empty_proxy(isolated):
     instance(isolated)
-    sid = store.add_subscription('测试', 'https://fixture.test/sub', lambda _: [{
-        'name': '节点', 'type': 'ss', 'server': '192.0.2.2', 'port': 443,
-        'cipher': 'aes-128-gcm', 'password': 'fixture',
-    }])
+    sid = store.add_subscription(
+        '测试',
+        'https://fixture.test/sub',
+        lambda _: [
+            {
+                'name': '节点',
+                'type': 'ss',
+                'server': '192.0.2.2',
+                'port': 443,
+                'cipher': 'aes-128-gcm',
+                'password': 'fixture',
+            }
+        ],
+    )
     store.bind_subscription('ifixture', sid, store.load_cached_nodes(sid)[0]['id'])
     assert store.read_proxy('ifixture') == store.read_proxy('missing')

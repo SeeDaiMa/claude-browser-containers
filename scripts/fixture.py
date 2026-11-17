@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Temporary RFC1929 SOCKS5 + HTTPS test origin, never a production service."""
+
 import hmac
 import http.server
 import json
@@ -68,7 +69,11 @@ class Socks(socketserver.BaseRequestHandler):
             auth_version, count = read(sock, 2)
             username = read(sock, count)
             password = read(sock, read(sock, 1)[0])
-            accepted = auth_version == 1 and hmac.compare_digest(username, CONFIG['username'].encode()) and hmac.compare_digest(password, CONFIG['password'].encode())
+            accepted = (
+                auth_version == 1
+                and hmac.compare_digest(username, CONFIG['username'].encode())
+                and hmac.compare_digest(password, CONFIG['password'].encode())
+            )
             event(kind='auth', accepted=accepted, fixture=CONFIG['marker'])
             sock.sendall(b'\x01\x00' if accepted else b'\x01\x01')
             if not accepted:

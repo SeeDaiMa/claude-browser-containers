@@ -1,4 +1,5 @@
 """生命周期调度回归，只使用临时文件、受控线程和假的 Docker 命令。"""
+
 import concurrent.futures
 import fcntl
 import os
@@ -154,17 +155,17 @@ def test_cli_status_can_share_the_manager_lock(isolated):
     commands = isolated / 'commands'
     commands.mkdir()
     fake = commands / 'docker'
-    fake.write_text('''#!/bin/sh
+    fake.write_text("""#!/bin/sh
 [ "$1" = ps ] || exit 2
 echo running
-''')
+""")
     fake.chmod(0o755)
     env = {**os.environ, 'PATH': str(commands) + os.pathsep + os.environ.get('PATH', '')}
     process = None
     try:
         with open(isolated / '.manager.lock', 'a') as lock:
             fcntl.flock(lock, fcntl.LOCK_SH)
-            driver = '''import runpy, sys
+            driver = """import runpy, sys
 from pathlib import Path
 source = Path(sys.argv[1])
 sys.path.insert(0, str(source.parent))
@@ -172,9 +173,14 @@ import cbc
 print('CLI_READY', flush=True)
 sys.argv = sys.argv[1:]
 runpy.run_path(str(source), run_name='__main__')
-'''
-            process = subprocess.Popen([sys.executable, '-B', '-c', driver, str(scripts / 'cbc.py'), 'status', 'ia'],
-                                       env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+"""
+            process = subprocess.Popen(
+                [sys.executable, '-B', '-c', driver, str(scripts / 'cbc.py'), 'status', 'ia'],
+                env=env,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
             assert select.select([process.stdout], [], [], 5)[0], 'CLI 未完成模块加载'
             assert process.stdout.readline() == 'CLI_READY\n'
             stdout, stderr = process.communicate(timeout=5)

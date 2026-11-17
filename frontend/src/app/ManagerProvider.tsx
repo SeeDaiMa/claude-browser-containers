@@ -117,7 +117,9 @@ export function ManagerProvider({ children }: { children: ReactNode }) {
   const subscribeOverview = useCallback((listener: OverviewListener) => {
     overviewListeners.current.add(listener)
     listener(latestOverview.current)
-    return () => { overviewListeners.current.delete(listener) }
+    return () => {
+      overviewListeners.current.delete(listener)
+    }
   }, [])
 
   const notify = useCallback((title: string, tone: Tone = 'info', detail = '') => {
@@ -131,96 +133,103 @@ export function ManagerProvider({ children }: { children: ReactNode }) {
   }, [])
 
   // 后台轮询不切换 refreshing，刷新按钮只在用户手动刷新时显示忙碌。
-  const load = useCallback(async (showBusy: boolean) => {
-    if (polling.current) return
-    polling.current = true
-    if (showBusy) setRefreshing(true)
-    try {
-      const results = await Promise.allSettled([api.overview(), api.tasks(), api.subscriptions()])
-      const [overview, taskList, subscriptionList] = results
-      if (overview.status === 'fulfilled') {
-        // 已在途的旧快照不能重新显示刚刚关闭的提醒；新变化仍按独立 ID 提醒。
-        const latest = {
-          ...overview.value,
-          instances: overview.value.instances.map((item) =>
-            item.exit?.change_id && dismissedExitChanges.current.get(item.id) === item.exit.change_id
-              ? { ...item, exit: { ...item.exit, dismissed_change_id: item.exit.change_id } }
-              : item,
-          ),
+  const load = useCallback(
+    async (showBusy: boolean) => {
+      if (polling.current) return
+      polling.current = true
+      if (showBusy) setRefreshing(true)
+      try {
+        const results = await Promise.allSettled([api.overview(), api.tasks(), api.subscriptions()])
+        const [overview, taskList, subscriptionList] = results
+        if (overview.status === 'fulfilled') {
+          // 已在途的旧快照不能重新显示刚刚关闭的提醒；新变化仍按独立 ID 提醒。
+          const latest = {
+            ...overview.value,
+            instances: overview.value.instances.map((item) =>
+              item.exit?.change_id &&
+              dismissedExitChanges.current.get(item.id) === item.exit.change_id
+                ? { ...item, exit: { ...item.exit, dismissed_change_id: item.exit.change_id } }
+                : item,
+            ),
+          }
+          setData((current) => keepIfSame(current, latest))
+          // 每次实际观测都通知工作区；内容相同时仍沿用 data，避免全局重渲染。
+          latestOverview.current = latest
+          overviewListeners.current.forEach((listener) => listener(latest))
+          for (const item of latest.instances) {
+            const state = item.monitor?.state || ''
+            const previous = healthSeen.current.get(item.id)
+            if (previous) {
+              if (previous.state !== state && item.monitor?.state === 'failed')
+                notify(`${item.display_name}：自动恢复已停止`, 'danger', item.monitor.detail)
+              else if (previous.state !== state && item.monitor?.state === 'warning')
+                notify(`${item.display_name}：运行异常`, 'warn', item.monitor.detail)
+              if (hasPendingExitChange(item.exit) && previous.changeId !== item.exit?.change_id)
+                notify(
+                  `${item.display_name}：Claude 出口 IP 已变化`,
+                  'warn',
+                  `${item.exit?.previous_ip} → ${item.exit?.last_success?.ip || item.exit?.ip}`,
+                )
+            }
+            healthSeen.current.set(item.id, { state, changeId: item.exit?.change_id })
+          }
+        } else {
+          latestOverview.current = null
+          overviewListeners.current.forEach((listener) => listener(null))
         }
-        setData((current) => keepIfSame(current, latest))
-        // 每次实际观测都通知工作区；内容相同时仍沿用 data，避免全局重渲染。
-        latestOverview.current = latest
-        overviewListeners.current.forEach((listener) => listener(latest))
-        for (const item of latest.instances) {
-          const state = item.monitor?.state || ''
-          const previous = healthSeen.current.get(item.id)
-          if (previous) {
-            if (previous.state !== state && item.monitor?.state === 'failed')
-              notify(`${item.display_name}：自动恢复已停止`, 'danger', item.monitor.detail)
-            else if (previous.state !== state && item.monitor?.state === 'warning')
-              notify(`${item.display_name}：运行异常`, 'warn', item.monitor.detail)
-            if (hasPendingExitChange(item.exit) && previous.changeId !== item.exit?.change_id)
+        if (subscriptionList.status === 'fulfilled') {
+          const incoming = subscriptionList.value.subscriptions
+          setSubscriptions((current) => keepIfSame(current, incoming))
+        }
+        if (taskList.status === 'fulfilled') {
+          for (const task of taskList.value.tasks) {
+            const previous = seen.current.get(task.id)
+            if (previous && previous !== task.state && isFinished(task)) {
+              const name = ACTION_NAMES[task.kind] || '后台任务'
               notify(
-                `${item.display_name}：Claude 出口 IP 已变化`,
-                'warn',
-                `${item.exit?.previous_ip} → ${item.exit?.last_success?.ip || item.exit?.ip}`,
+                `${name}${task.cancel_requested && task.state === 'interrupted' ? '已取消' : task.state === 'succeeded' ? '已完成' : task.state === 'interrupted' ? '已中断' : '失败'}`,
+                task.state === 'succeeded' ? 'ok' : task.cancel_requested ? 'info' : 'danger',
+                task.error || task.result.detail || '',
               )
+            }
+            seen.current.set(task.id, task.state)
           }
-          healthSeen.current.set(item.id, { state, changeId: item.exit?.change_id })
+          const incoming = taskList.value.tasks
+          incoming.forEach((task) => unconfirmedTasks.current.delete(task.id))
+          const merged = [...incoming, ...unconfirmedTasks.current.values()]
+          hasActiveTasks.current = merged.some(isActive)
+          setTasks((current) => keepIfSame(current, merged))
         }
-      } else {
-        latestOverview.current = null
-        overviewListeners.current.forEach((listener) => listener(null))
+        const failed = results.find((result) => result.status === 'rejected')
+        setError(
+          failed?.status === 'rejected'
+            ? failed.reason instanceof Error
+              ? failed.reason.message
+              : '管理台连接失败，请稍后重试。'
+            : '',
+        )
+      } finally {
+        polling.current = false
+        if (showBusy) setRefreshing(false)
       }
-      if (subscriptionList.status === 'fulfilled') {
-        const incoming = subscriptionList.value.subscriptions
-        setSubscriptions((current) => keepIfSame(current, incoming))
-      }
-      if (taskList.status === 'fulfilled') {
-        for (const task of taskList.value.tasks) {
-          const previous = seen.current.get(task.id)
-          if (previous && previous !== task.state && isFinished(task)) {
-            const name = ACTION_NAMES[task.kind] || '后台任务'
-            notify(
-              `${name}${task.cancel_requested && task.state === 'interrupted' ? '已取消' : task.state === 'succeeded' ? '已完成' : task.state === 'interrupted' ? '已中断' : '失败'}`,
-              task.state === 'succeeded' ? 'ok' : task.cancel_requested ? 'info' : 'danger',
-              task.error || task.result.detail || '',
-            )
-          }
-          seen.current.set(task.id, task.state)
-        }
-        const incoming = taskList.value.tasks
-        incoming.forEach((task) => unconfirmedTasks.current.delete(task.id))
-        const merged = [...incoming, ...unconfirmedTasks.current.values()]
-        hasActiveTasks.current = merged.some(isActive)
-        setTasks((current) => keepIfSame(current, merged))
-      }
-      const failed = results.find((result) => result.status === 'rejected')
-      setError(
-        failed?.status === 'rejected'
-          ? failed.reason instanceof Error
-            ? failed.reason.message
-            : '管理台连接失败，请稍后重试。'
-          : '',
-      )
-    } finally {
-      polling.current = false
-      if (showBusy) setRefreshing(false)
-    }
-  }, [notify])
+    },
+    [notify],
+  )
   const refresh = useCallback(() => load(true), [load])
   const resetDraft = useCallback(() => setDraft(newDraft()), [])
 
   async function dismissExitChange(id: string, changeId: string) {
     const exit = await api.dismissExitChange(id, changeId)
     dismissedExitChanges.current.set(id, changeId)
-    setData((current) => current && {
-      ...current,
-      instances: current.instances.map((item) =>
-        item.id === id && item.exit?.change_id === exit.change_id ? { ...item, exit } : item,
-      ),
-    })
+    setData(
+      (current) =>
+        current && {
+          ...current,
+          instances: current.instances.map((item) =>
+            item.id === id && item.exit?.change_id === exit.change_id ? { ...item, exit } : item,
+          ),
+        },
+    )
   }
 
   useEffect(() => {

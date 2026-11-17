@@ -1,4 +1,5 @@
 """一次性实例的存储往返和工作区画面。拒绝把 claude-a / claude-b 当目标。"""
+
 import json
 import os
 from pathlib import Path
@@ -30,6 +31,7 @@ def test_disposable_roundtrip_refuses_live_instances():
 
 def test_disposable_storage_and_workspace(capsys):
     import sys
+
     sys.path.insert(0, str(ROOT / 'scripts'))
     import cbc
     import manager_core
@@ -38,7 +40,9 @@ def test_disposable_storage_and_workspace(capsys):
     SCRATCH.mkdir(parents=True, exist_ok=True)
     before = _ab_snapshot()
     mutations_before = _ab_mutation_ids()
-    (SCRATCH / 'ab-before.json').write_text(json.dumps({'containers': before, 'mutation_task_ids': mutations_before}, ensure_ascii=False, indent=2))
+    (SCRATCH / 'ab-before.json').write_text(
+        json.dumps({'containers': before, 'mutation_task_ids': mutations_before}, ensure_ascii=False, indent=2)
+    )
     slug = 'i' + secrets.token_hex(4)
     require_disposable(slug)
     marker = secrets.token_hex(8)
@@ -59,7 +63,13 @@ def test_disposable_storage_and_workspace(capsys):
         store._save(cbc.CONFIGS / slug / 'instance.json', raw)
         index = raw['network_index']
         password = secrets.token_urlsafe(24)
-        proxy = {'host': f'10.232.{index}.4', 'port': 1080, 'username': f'fixture-{marker[:6]}', 'password': password, 'expected_ip': ''}
+        proxy = {
+            'host': f'10.232.{index}.4',
+            'port': 1080,
+            'username': f'fixture-{marker[:6]}',
+            'password': password,
+            'expected_ip': '',
+        }
         store._write_proxy(slug, proxy)
         cbc.prepare(slug, cdp=False)
         cbc.compose(slug, 'up', '-d', '--wait', '--wait-timeout', '90', 'guard', 'proxy', capture=True)
@@ -85,14 +95,20 @@ def test_disposable_storage_and_workspace(capsys):
         (SCRATCH / 'trash-roundtrip.log').write_text(text)
         after = _ab_snapshot()
         mutations_after = _ab_mutation_ids()
-        (SCRATCH / 'ab-after.json').write_text(json.dumps({'containers': after, 'mutation_task_ids': mutations_after}, ensure_ascii=False, indent=2))
+        (SCRATCH / 'ab-after.json').write_text(
+            json.dumps({'containers': after, 'mutation_task_ids': mutations_after}, ensure_ascii=False, indent=2)
+        )
         same = _ab_same(before, after)
         no_new_mutations = mutations_after == mutations_before
         (SCRATCH / 'ab-untouched.txt').write_text(
-            'before\n' + json.dumps(before, ensure_ascii=False, indent=2)
-            + '\nafter\n' + json.dumps(after, ensure_ascii=False, indent=2)
-            + '\nmutation_task_ids_before\n' + json.dumps(mutations_before)
-            + '\nmutation_task_ids_after\n' + json.dumps(mutations_after)
+            'before\n'
+            + json.dumps(before, ensure_ascii=False, indent=2)
+            + '\nafter\n'
+            + json.dumps(after, ensure_ascii=False, indent=2)
+            + '\nmutation_task_ids_before\n'
+            + json.dumps(mutations_before)
+            + '\nmutation_task_ids_after\n'
+            + json.dumps(mutations_after)
             + f'\nstarted_at_and_instance_json_same {same}\nno_new_ab_mutations {no_new_mutations}\n'
         )
         assert same, 'claude-a 或 claude-b 的 StartedAt 或 instance.json 变了'
@@ -102,9 +118,12 @@ def test_disposable_storage_and_workspace(capsys):
 
 def _ab_snapshot():
     import hashlib
+
     rows = {}
     for name in FORBIDDEN:
-        started = subprocess.check_output(['docker', 'inspect', '-f', '{{.State.StartedAt}}', f'cbc-{name}-browser'], text=True).strip()
+        started = subprocess.check_output(
+            ['docker', 'inspect', '-f', '{{.State.StartedAt}}', f'cbc-{name}-browser'], text=True
+        ).strip()
         du = subprocess.check_output(['du', '-sk', str(ROOT / 'data' / name)], text=True).split()[0]
         config = hashlib.sha256((ROOT / 'configs' / name / 'instance.json').read_bytes()).hexdigest()
         rows[name] = {'started': started, 'data_kib': du, 'instance_json_sha256': config}
@@ -138,6 +157,7 @@ def _ab_same(before, after):
 
 def _ensure_manager():
     import socket
+
     probe = socket.socket()
     probe.settimeout(0.4)
     up = probe.connect_ex(('127.0.0.1', 5790)) == 0
@@ -157,16 +177,77 @@ def _ensure_manager():
 
 def _start_fixture(slug, proxy, marker):
     import sys
+
     sys.path.insert(0, str(ROOT / 'scripts'))
     import cbc
+
     directory = cbc.CONFIGS / slug / 'runtime' / 'fixture'
     directory.mkdir(parents=True, exist_ok=True)
     directory.chmod(0o700)
-    cbc.save_json(directory / 'fixture.json', dict(proxy, marker=marker, download_name=f'cbc-roundtrip-{marker}.txt'), private=True)
-    cbc.run(['openssl', 'req', '-x509', '-newkey', 'rsa:2048', '-sha256', '-days', '1', '-nodes', '-keyout', directory / 'key.pem', '-out', directory / 'cert.pem', '-subj', '/CN=cbc.test', '-addext', 'subjectAltName=DNS:cbc.test'])
+    cbc.save_json(
+        directory / 'fixture.json',
+        dict(proxy, marker=marker, download_name=f'cbc-roundtrip-{marker}.txt'),
+        private=True,
+    )
+    cbc.run(
+        [
+            'openssl',
+            'req',
+            '-x509',
+            '-newkey',
+            'rsa:2048',
+            '-sha256',
+            '-days',
+            '1',
+            '-nodes',
+            '-keyout',
+            directory / 'key.pem',
+            '-out',
+            directory / 'cert.pem',
+            '-subj',
+            '/CN=cbc.test',
+            '-addext',
+            'subjectAltName=DNS:cbc.test',
+        ]
+    )
     image = cbc.read_json(ROOT / 'images.lock.json')['network']['reference']
     cbc.docker('rm', '-f', f'cbc-fixture-{slug}', check=False)
-    cbc.docker('run', '-d', '--name', f'cbc-fixture-{slug}', '--label', 'io.cbc.test=true', '--network', f'cbc-{slug}-egress', '--ip', proxy['host'], '--cap-drop', 'ALL', '--cap-add', 'DAC_OVERRIDE', '--security-opt', f'seccomp={cbc.CONFIGS / "seccomp-default.json"}', '--security-opt', 'no-new-privileges=true', '--read-only', '--memory', '96m', '--cpus', '0.25', '--pids-limit', '64', '-v', f'{ROOT / "scripts/fixture.py"}:/fixture.py:ro', '-v', f'{directory}:/settings:ro', '--entrypoint', 'python3', image, '-u', '/fixture.py')
+    cbc.docker(
+        'run',
+        '-d',
+        '--name',
+        f'cbc-fixture-{slug}',
+        '--label',
+        'io.cbc.test=true',
+        '--network',
+        f'cbc-{slug}-egress',
+        '--ip',
+        proxy['host'],
+        '--cap-drop',
+        'ALL',
+        '--cap-add',
+        'DAC_OVERRIDE',
+        '--security-opt',
+        f'seccomp={cbc.CONFIGS / "seccomp-default.json"}',
+        '--security-opt',
+        'no-new-privileges=true',
+        '--read-only',
+        '--memory',
+        '96m',
+        '--cpus',
+        '0.25',
+        '--pids-limit',
+        '64',
+        '-v',
+        f'{ROOT / "scripts/fixture.py"}:/fixture.py:ro',
+        '-v',
+        f'{directory}:/settings:ro',
+        '--entrypoint',
+        'python3',
+        image,
+        '-u',
+        '/fixture.py',
+    )
     for _ in range(40):
         if '"kind": "ready"' in cbc.docker('logs', f'cbc-fixture-{slug}', check=False).stdout:
             return
@@ -188,7 +269,7 @@ def _api_task(action, slug, body=None):
     task = _api('POST', f'/api/instances/{slug}/{action}', body or {})
     deadline = time.time() + 180
     while time.time() < deadline:
-        current = _api('GET', f"/api/tasks/{task['id']}")
+        current = _api('GET', f'/api/tasks/{task["id"]}')
         if current['state'] in ('succeeded', 'failed', 'interrupted'):
             return current
         time.sleep(1)
@@ -197,10 +278,14 @@ def _api_task(action, slug, body=None):
 
 def _write_storage(slug, marker):
     import sys
+
     sys.path.insert(0, str(ROOT / 'scripts'))
     import cbc
+
     write = """(async()=>{const marker=MARKER;localStorage.setItem('cbc-marker',marker);document.cookie='cbc-marker='+marker+'; Max-Age=86400; Secure; SameSite=Lax';const db=await new Promise((ok,no)=>{let r=indexedDB.open('cbc-isolation',1);r.onupgradeneeded=()=>r.result.createObjectStore('markers');r.onsuccess=()=>ok(r.result);r.onerror=()=>no(r.error)});await new Promise((ok,no)=>{let t=db.transaction('markers','readwrite');t.objectStore('markers').put(marker,'marker');t.oncomplete=ok;t.onerror=no});db.close();return {cookie:document.cookie,localStorage:localStorage.getItem('cbc-marker')}})()"""
-    written = json.loads(cbc.probe(slug, 'page', 'https://cbc.test/', write.replace('MARKER', json.dumps(marker))).stdout)
+    written = json.loads(
+        cbc.probe(slug, 'page', 'https://cbc.test/', write.replace('MARKER', json.dumps(marker))).stdout
+    )
     assert written['localStorage'] == marker
     assert f'cbc-marker={marker}' in written['cookie']
     cbc.probe(slug, 'download', f'cbc-roundtrip-{marker}.txt', marker)
@@ -212,16 +297,20 @@ def _write_storage(slug, marker):
 
 def _read_storage(slug):
     import sys
+
     sys.path.insert(0, str(ROOT / 'scripts'))
     import cbc
+
     read = """(async()=>{const db=await new Promise((ok,no)=>{let r=indexedDB.open('cbc-isolation',1);r.onsuccess=()=>ok(r.result);r.onerror=()=>no(r.error)});const indexedDBValue=await new Promise((ok,no)=>{let r=db.transaction('markers').objectStore('markers').get('marker');r.onsuccess=()=>ok(r.result);r.onerror=()=>no(r.error)});db.close();return {cookie:document.cookie,localStorage:localStorage.getItem('cbc-marker'),indexedDB:indexedDBValue}})()"""
     return json.loads(cbc.probe(slug, 'page', 'https://cbc.test/', read).stdout)
 
 
 def _workspace_two_passes(slug, marker, note):
     import sys
+
     sys.path.insert(0, str(ROOT / 'scripts'))
     import cbc
+
     arm = """(()=>{const input=document.createElement('input');input.id='cbc-keys';input.style.cssText='position:fixed;inset:0;font-size:48px;z-index:2147483647';document.body.append(input);input.focus();window.__cbcClicks=0;window.__cbcKeys='';document.addEventListener('pointerdown',()=>{window.__cbcClicks+=1},true);document.addEventListener('keydown',(event)=>{window.__cbcKeys+=event.key},true);return true})()"""
     assert json.loads(cbc.probe(slug, 'eval', arm).stdout) is True
     try:
@@ -244,14 +333,32 @@ def _workspace_two_passes(slug, marker, note):
         with socket.socket() as listener:
             listener.bind(('127.0.0.1', 0))
             debug_port = listener.getsockname()[1]
-        chrome_proc = subprocess.Popen([chrome_bin, f'--remote-debugging-port={debug_port}', f'--user-data-dir={profile}', '--no-first-run', '--new-window', 'about:blank'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+        chrome_proc = subprocess.Popen(
+            [
+                chrome_bin,
+                f'--remote-debugging-port={debug_port}',
+                f'--user-data-dir={profile}',
+                '--no-first-run',
+                '--new-window',
+                'about:blank',
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
         deadline = time.time() + 15
         version = None
         while time.time() < deadline:
             try:
-                version = json.loads(urllib.request.urlopen(f'http://127.0.0.1:{debug_port}/json/version', timeout=0.5).read().decode())
-                listeners = subprocess.check_output(['lsof', '-nP', f'-iTCP:{debug_port}', '-sTCP:LISTEN', '-t'], text=True)
-                if str(chrome_proc.pid) in listeners.split() or any(_child_of(chrome_proc.pid, int(pid)) for pid in listeners.split() if pid.strip()):
+                version = json.loads(
+                    urllib.request.urlopen(f'http://127.0.0.1:{debug_port}/json/version', timeout=0.5).read().decode()
+                )
+                listeners = subprocess.check_output(
+                    ['lsof', '-nP', f'-iTCP:{debug_port}', '-sTCP:LISTEN', '-t'], text=True
+                )
+                if str(chrome_proc.pid) in listeners.split() or any(
+                    _child_of(chrome_proc.pid, int(pid)) for pid in listeners.split() if pid.strip()
+                ):
                     break
                 version = None
             except (OSError, json.JSONDecodeError, subprocess.CalledProcessError):
@@ -273,10 +380,17 @@ def _workspace_two_passes(slug, marker, note):
                 chrome_proc.kill()
         if playwright:
             playwright.stop()
+
     def succeeded(row):
         observed = row['observed']
         typed = (observed.get('keys') or '') + (observed.get('downs') or '')
-        return row['same_iframe'] and 'frame-wrap' in row['fullscreen'] and observed.get('clicks', 0) >= 1 and 'z' in typed.lower()
+        return (
+            row['same_iframe']
+            and 'frame-wrap' in row['fullscreen']
+            and observed.get('clicks', 0) >= 1
+            and 'z' in typed.lower()
+        )
+
     assert succeeded(results[0]) and succeeded(results[1])
     note('PASS 两遍工作区键盘、鼠标、尺寸和全屏一致')
     (SCRATCH / 'workspace-input.log').write_text(json.dumps(results, ensure_ascii=False, indent=2))
@@ -284,9 +398,15 @@ def _workspace_two_passes(slug, marker, note):
 
 def _one_workspace_pass(context, slug, index):
     import sys
+
     sys.path.insert(0, str(ROOT / 'scripts'))
     import cbc
-    cbc.probe(slug, 'eval', "(()=>{const input=document.getElementById('cbc-keys'); if(input){input.value=''; input.focus();} window.__cbcClicks=0; window.__cbcKeys=''; return true})()")
+
+    cbc.probe(
+        slug,
+        'eval',
+        "(()=>{const input=document.getElementById('cbc-keys'); if(input){input.value=''; input.focus();} window.__cbcClicks=0; window.__cbcKeys=''; return true})()",
+    )
     page = context.pages[0] if context.pages else context.new_page()
     page.set_viewport_size({'width': 1200, 'height': 800})
     page.goto(f'http://127.0.0.1:5790/instance/{slug}', wait_until='domcontentloaded')
@@ -323,7 +443,13 @@ def _one_workspace_pass(context, slug, index):
         page.wait_for_timeout(200)
         canvas.press('z')
         page.wait_for_timeout(300)
-        observed = json.loads(cbc.probe(slug, 'eval', '({keys:(document.getElementById("cbc-keys")||{}).value||"", downs:window.__cbcKeys||"", clicks:window.__cbcClicks})').stdout)
+        observed = json.loads(
+            cbc.probe(
+                slug,
+                'eval',
+                '({keys:(document.getElementById("cbc-keys")||{}).value||"", downs:window.__cbcKeys||"", clicks:window.__cbcClicks})',
+            ).stdout
+        )
         typed = (observed.get('keys') or '') + (observed.get('downs') or '')
         if observed.get('clicks', 0) >= 1 and 'z' in typed.lower():
             break
@@ -333,24 +459,45 @@ def _one_workspace_pass(context, slug, index):
     running = subprocess_running(slug)
     assert running
     assert observed['clicks'] >= 1 or 'Z' in (observed['keys'] or '') or 'z' in (observed['keys'] or '')
-    return {'src': src, 'same_iframe': same, 'fullscreen': fullscreen, 'observed': observed, 'still_running_after_leave': running}
+    return {
+        'src': src,
+        'same_iframe': same,
+        'fullscreen': fullscreen,
+        'observed': observed,
+        'still_running_after_leave': running,
+    }
 
 
 def subprocess_running(slug):
-    result = subprocess.run(['docker', 'inspect', '-f', '{{.State.Running}}', f'cbc-{slug}-browser'], text=True, capture_output=True)
+    result = subprocess.run(
+        ['docker', 'inspect', '-f', '{{.State.Running}}', f'cbc-{slug}-browser'], text=True, capture_output=True
+    )
     return result.stdout.strip() == 'true'
 
 
 def _stop_trash_restore_and_read(slug, marker, note):
     import sys
+
     sys.path.insert(0, str(ROOT / 'scripts'))
     import cbc
+
     cbc.probe(slug, 'eval', "(()=>{window.onbeforeunload=()=>'stay';return true})()")
     dialog = _api_task('stop', slug)
     if dialog['state'] == 'failed' and '关闭确认' in dialog['error'] and subprocess_running(slug):
         note('PASS 关闭确认出现时停止失败且进程仍在')
         # 确认框挡住页面脚本。用已有的 xdotool 关掉确认框，再清掉拦截。
-        cbc.docker('exec', '--user', '1000', cbc.container(slug, 'browser'), 'env', 'DISPLAY=:0', 'xdotool', 'key', 'Escape', check=False)
+        cbc.docker(
+            'exec',
+            '--user',
+            '1000',
+            cbc.container(slug, 'browser'),
+            'env',
+            'DISPLAY=:0',
+            'xdotool',
+            'key',
+            'Escape',
+            check=False,
+        )
         time.sleep(0.5)
         cbc.probe(slug, 'eval', '(()=>{window.onbeforeunload=null;return true})()')
         dialog = _api_task('stop', slug)
@@ -377,8 +524,10 @@ def _purge_if_present(slug):
     if slug in FORBIDDEN or not slug.startswith('i'):
         return
     import sys
+
     sys.path.insert(0, str(ROOT / 'scripts'))
     import cbc
+
     if not (cbc.CONFIGS / slug / 'instance.json').exists():
         return
     try:
@@ -387,7 +536,22 @@ def _purge_if_present(slug):
             subprocess.run([str(ROOT / 'scripts' / 'stop.sh'), slug], cwd=ROOT, check=False)
         _api_task('purge', slug, {'confirm_name': display})
     except Exception:
-        subprocess.run(['docker', 'compose', '--project-name', f'cbc-{slug}', '--env-file', str(cbc.CONFIGS / slug / 'runtime' / 'compose.env'), '-f', str(ROOT / 'compose.yaml'), 'down', '--timeout', '10'], check=False)
+        subprocess.run(
+            [
+                'docker',
+                'compose',
+                '--project-name',
+                f'cbc-{slug}',
+                '--env-file',
+                str(cbc.CONFIGS / slug / 'runtime' / 'compose.env'),
+                '-f',
+                str(ROOT / 'compose.yaml'),
+                'down',
+                '--timeout',
+                '10',
+            ],
+            check=False,
+        )
         for role in ('browser', 'proxy', 'guard'):
             subprocess.run(['docker', 'rm', '-f', f'cbc-{slug}-{role}'], check=False, capture_output=True)
         shutil.rmtree(cbc.CONFIGS / slug, ignore_errors=True)

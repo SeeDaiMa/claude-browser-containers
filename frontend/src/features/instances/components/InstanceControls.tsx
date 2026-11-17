@@ -52,9 +52,10 @@ export function Diagnostics({ item }: { item: Instance }) {
   else if (item.monitor?.state === 'warning' && !item.monitor.enabled) recoveryLabel = '已暂停'
   const detail = !connected
     ? '暂时无法读取最新实例状态，请检查管理台和 Docker 连接。'
-    : service?.error || (service && !service.running
-      ? '健康监测服务未运行，暂时无法确认实例健康状态。'
-      : item.monitor?.detail || '尚未获得健康监测结果。')
+    : service?.error ||
+      (service && !service.running
+        ? '健康监测服务未运行，暂时无法确认实例健康状态。'
+        : item.monitor?.detail || '尚未获得健康监测结果。')
   const descriptions: Record<string, string> = {
     browser: '浏览器、网页画面和独立数据',
     proxy: '连接所选上游代理',
@@ -75,9 +76,13 @@ export function Diagnostics({ item }: { item: Instance }) {
           <div className="cm-diag__meta">
             <span>自动恢复：{recoveryLabel}</span>
             <span>已尝试恢复：{item.monitor.recovery_attempts} / 3 次</span>
-            {item.monitor.fault_since && <span>异常开始：{formatDate(item.monitor.fault_since)}</span>}
+            {item.monitor.fault_since && (
+              <span>异常开始：{formatDate(item.monitor.fault_since)}</span>
+            )}
             {item.monitor.next_retry_at && (
-              <span>下次重试：{formatDate(new Date(item.monitor.next_retry_at * 1000).toISOString())}</span>
+              <span>
+                下次重试：{formatDate(new Date(item.monitor.next_retry_at * 1000).toISOString())}
+              </span>
             )}
           </div>
         )}
@@ -145,12 +150,19 @@ export function HealthNotice({ item }: { item?: Instance }) {
         </Notice>
       )}
       {data.docker.ok && data.monitor?.error && (
-        <Notice tone="warn" title="健康监测暂时异常">{data.monitor.error}</Notice>
+        <Notice tone="warn" title="健康监测暂时异常">
+          {data.monitor.error}
+        </Notice>
       )}
       {faults.length > 0 && (
-        <Notice tone={faults.some((row) => row.monitor?.state === 'failed') ? 'danger' : 'warn'} title="实例运行提醒">
+        <Notice
+          tone={faults.some((row) => row.monitor?.state === 'failed') ? 'danger' : 'warn'}
+          title="实例运行提醒"
+        >
           {faults.map((row) => (
-            <p key={row.id}>{row.display_name}：{row.monitor?.detail}</p>
+            <p key={row.id}>
+              {row.display_name}：{row.monitor?.detail}
+            </p>
           ))}
         </Notice>
       )}
@@ -161,7 +173,11 @@ export function HealthNotice({ item }: { item?: Instance }) {
           title="检测到 Claude 出口 IP 变化"
           actions={
             <>
-              <Button small busy={dismissing.includes(row.id)} onClick={() => void closeChange(row)}>
+              <Button
+                small
+                busy={dismissing.includes(row.id)}
+                onClick={() => void closeChange(row)}
+              >
                 关闭本次提醒
               </Button>
               <ButtonLink variant="ghost" small to={`/instance/${row.id}?info=ip`}>
@@ -212,9 +228,9 @@ export function LifecycleButton({
               : undefined
       }
       onClick={() => {
-        submitTask(item.id, () => api.action(item.id, stop ? 'stop' : 'start'), { allowRecovery: recovering }).catch(
-          (reason: Error) => notify(reason.message, 'danger'),
-        )
+        submitTask(item.id, () => api.action(item.id, stop ? 'stop' : 'start'), {
+          allowRecovery: recovering,
+        }).catch((reason: Error) => notify(reason.message, 'danger'))
       }}
     >
       {busy

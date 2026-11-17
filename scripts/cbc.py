@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Local-only manager; stdlib only. Credentials are never command arguments."""
+
 import argparse
 from contextlib import contextmanager
 import datetime
@@ -33,7 +34,9 @@ UPSTREAM = {
     'chromium': 'jlesage/chromium@sha256:71e2e8468eb00519a1f90cbb82a12651c2541c6f5e85030faf9c8dd2ec2cc831',
     'gost': 'gogost/gost@sha256:f266f957c6e4f8d433ed23202a5745fa4969d08f3f0ef034fb9357345e16ad67',
 }
-DEFAULTS = dict(BROWSER_MEMORY_MIB='1536', BROWSER_CPUS='1.5', BROWSER_SHM_MIB='512', PROXY_MEMORY_MIB='256', GUARD_MEMORY_MIB='64')
+DEFAULTS = dict(
+    BROWSER_MEMORY_MIB='1536', BROWSER_CPUS='1.5', BROWSER_SHM_MIB='512', PROXY_MEMORY_MIB='256', GUARD_MEMORY_MIB='64'
+)
 COMMAND_TIMEOUT = 30
 IMAGE_PULL_TIMEOUT = 900
 IMAGE_BUILD_TIMEOUT = 1800
@@ -56,7 +59,9 @@ class CountryPolicyError(RuntimeError):
 
 def run(args, *, check=True, capture=True, timeout=COMMAND_TIMEOUT, **kwargs):
     # 没有超时的外部命令会占住管理锁，其他实例的启停只能一直排队。
-    result = subprocess.run([str(a) for a in args], cwd=ROOT, text=True, capture_output=capture, timeout=timeout, **kwargs)
+    result = subprocess.run(
+        [str(a) for a in args], cwd=ROOT, text=True, capture_output=capture, timeout=timeout, **kwargs
+    )
     if check and result.returncode:
         raise RuntimeError((result.stderr or result.stdout or 'Command failed').strip())
     return result
@@ -86,6 +91,7 @@ def save_json(path, value, private=False):
 
 def validate_name(name):
     import store
+
     if not re.fullmatch(store.INSTANCE_SLUG_PATTERN, name):
         raise ValueError('实例名须为 1–32 位小写字母、数字或连字符，首位为字母。')
     return name
@@ -102,18 +108,36 @@ def instances(names=None):
 
 def settings(name):
     import store
+
     return store.read_instance(CONFIGS / validate_name(name) / 'instance.json')
 
 
 def addresses(name):
     i = settings(name)['network_index']
-    return {'INTERNAL_SUBNET': f'10.231.{i}.0/29', 'EGRESS_SUBNET': f'10.232.{i}.0/29',
-            'BROWSER_IP': f'10.231.{i}.2', 'BRIDGE_IP': f'10.231.{i}.3', 'EGRESS_IP': f'10.232.{i}.3', 'INGRESS_IP': f'10.232.{i}.2'}
+    return {
+        'INTERNAL_SUBNET': f'10.231.{i}.0/29',
+        'EGRESS_SUBNET': f'10.232.{i}.0/29',
+        'BROWSER_IP': f'10.231.{i}.2',
+        'BRIDGE_IP': f'10.231.{i}.3',
+        'EGRESS_IP': f'10.232.{i}.3',
+        'INGRESS_IP': f'10.232.{i}.2',
+    }
 
 
 def compose(name, *args, check=True, capture=True, timeout=120):
-    return docker('compose', '--project-name', f'cbc-{name}', '--env-file', CONFIGS / name / 'runtime/compose.env',
-                  '-f', ROOT / 'compose.yaml', *args, check=check, capture=capture, timeout=timeout)
+    return docker(
+        'compose',
+        '--project-name',
+        f'cbc-{name}',
+        '--env-file',
+        CONFIGS / name / 'runtime/compose.env',
+        '-f',
+        ROOT / 'compose.yaml',
+        *args,
+        check=check,
+        capture=capture,
+        timeout=timeout,
+    )
 
 
 def container(name, role):
@@ -121,7 +145,9 @@ def container(name, role):
 
 
 def active(name):
-    result = docker('ps', '-a', '--filter', f'name=^/{container(name, "browser")}$', '--format', '{{.State}}', timeout=8)
+    result = docker(
+        'ps', '-a', '--filter', f'name=^/{container(name, "browser")}$', '--format', '{{.State}}', timeout=8
+    )
     return result.stdout.strip() in ('running', 'paused', 'restarting')
 
 
@@ -129,7 +155,17 @@ def down(name, timeout=20):
     """停止失败不能当成功；缺少 compose.env 的未启动实例也可以安全清理。"""
     if (CONFIGS / name / 'runtime/compose.env').exists():
         compose(name, 'down', '--timeout', str(timeout))
-    remaining = docker('ps', '-a', '--filter', f'label={LABEL}', '--filter', f'label=io.cbc.instance={name}', '--format', '{{.Names}}', timeout=8)
+    remaining = docker(
+        'ps',
+        '-a',
+        '--filter',
+        f'label={LABEL}',
+        '--filter',
+        f'label=io.cbc.instance={name}',
+        '--format',
+        '{{.Names}}',
+        timeout=8,
+    )
     if remaining.stdout.strip():
         raise RuntimeError('实例组件尚未清理完成，请检查 Docker 和实例运行配置后重试。')
 
@@ -144,6 +180,7 @@ def cleanup_start_failure(name, error):
 
 def create(name, port):
     import store
+
     store.require_complete_inventory()
     validate_name(name)
     directory = CONFIGS / name
@@ -209,10 +246,18 @@ def manual_socks(proxy):
     try:
         upstream = [str(ipaddress.IPv4Address(values[0]))]
     except ipaddress.AddressValueError:
-        upstream = sorted({item[4][0] for item in socket.getaddrinfo(values[0], port, socket.AF_INET, socket.SOCK_STREAM)})
+        upstream = sorted(
+            {item[4][0] for item in socket.getaddrinfo(values[0], port, socket.AF_INET, socket.SOCK_STREAM)}
+        )
     if not upstream:
         raise ValueError('上游没有 IPv4 地址。')
-    return {'upstream': upstream, 'port': port, 'username': proxy['username'], 'password': proxy['password'], 'label': '手动 SOCKS5'}
+    return {
+        'upstream': upstream,
+        'port': port,
+        'username': proxy['username'],
+        'password': proxy['password'],
+        'label': '手动 SOCKS5',
+    }
 
 
 def node_upstream(name):
@@ -220,6 +265,7 @@ def node_upstream(name):
     record = selection_map().get(name)
     if isinstance(record, dict) and record.get('node_id'):
         import store
+
         node = store.materialize_node(record.get('subscription_id', ''), record['node_id'])
         pinned, address, port = catalog.pin_endpoint(node)
         return {'node': pinned, 'upstream': [address], 'port': port, 'label': node['name']}
@@ -241,14 +287,37 @@ def gost_config(name, bridge, upstream):
         address = '127.0.0.1:1080'
         connector = {'type': 'socks5', 'metadata': {'notls': True}}
     elif upstream:
-        address = f"{upstream['upstream'][0]}:{upstream['port']}"
-        connector = {'type': 'socks5', 'auth': {'username': upstream['username'], 'password': upstream['password']}, 'metadata': {'notls': True}}
+        address = f'{upstream["upstream"][0]}:{upstream["port"]}'
+        connector = {
+            'type': 'socks5',
+            'auth': {'username': upstream['username'], 'password': upstream['password']},
+            'metadata': {'notls': True},
+        }
     else:
         address = '192.0.2.1:1080'
         connector = {'type': 'socks5', 'auth': {'username': '', 'password': ''}, 'metadata': {'notls': True}}
     return {
-        'services': [{'name': name, 'addr': f'{bridge}:8080', 'handler': {'type': 'http', 'chain': 'upstream'}, 'listener': {'type': 'tcp'}}],
-        'chains': [{'name': 'upstream', 'hops': [{'name': 'socks', 'nodes': [{'name': 'dedicated', 'addr': address, 'connector': connector, 'dialer': {'type': 'tcp'}}]}]}],
+        'services': [
+            {
+                'name': name,
+                'addr': f'{bridge}:8080',
+                'handler': {'type': 'http', 'chain': 'upstream'},
+                'listener': {'type': 'tcp'},
+            }
+        ],
+        'chains': [
+            {
+                'name': 'upstream',
+                'hops': [
+                    {
+                        'name': 'socks',
+                        'nodes': [
+                            {'name': 'dedicated', 'addr': address, 'connector': connector, 'dialer': {'type': 'tcp'}}
+                        ],
+                    }
+                ],
+            }
+        ],
         'log': {'level': 'error', 'format': 'json', 'output': 'stderr'},
     }
 
@@ -278,9 +347,28 @@ def planned_browser(name, cdp=False):
     lock = read_json(ROOT / 'images.lock.json')
     env = resource_env()
     addr = addresses(name)
-    revision_source = json.dumps({'resources': env, 'addresses': addr, 'images': lock, 'cdp': cdp, 'port': settings(name)['port']}, sort_keys=True).encode()
+    revision_source = json.dumps(
+        {'resources': env, 'addresses': addr, 'images': lock, 'cdp': cdp, 'port': settings(name)['port']},
+        sort_keys=True,
+    ).encode()
     revision_source += (ROOT / 'compose.yaml').read_bytes()
-    for path in ['chromium-params.sh', 'chromium-policy.json', 'seccomp-chromium.json', 'novnc-clipboard-focus.sh', 'novnc-keyboard-shortcuts.sh', 'novnc-native-cursor.sh', 'novnc-hidpi.sh', 'novnc-ime.sh', 'novnc-ime.js', 'novnc-access.sh', 'novnc-clipboard-image.sh', 'cbc-clipboard-image.nginx.conf', 'cbc-clipboard-image-run.sh', 'bin/cbc-clipboard-image', 'cbc-clipboard-image.c']:
+    for path in [
+        'chromium-params.sh',
+        'chromium-policy.json',
+        'seccomp-chromium.json',
+        'novnc-clipboard-focus.sh',
+        'novnc-keyboard-shortcuts.sh',
+        'novnc-native-cursor.sh',
+        'novnc-hidpi.sh',
+        'novnc-ime.sh',
+        'novnc-ime.js',
+        'novnc-access.sh',
+        'novnc-clipboard-image.sh',
+        'cbc-clipboard-image.nginx.conf',
+        'cbc-clipboard-image-run.sh',
+        'bin/cbc-clipboard-image',
+        'cbc-clipboard-image.c',
+    ]:
         revision_source += (CONFIGS / path).read_bytes()
     return {
         'image': lock['browser']['reference'],
@@ -336,7 +424,15 @@ def prepare(name, cdp=False, keep_browser=None):
         mihomo_path.unlink()
     plan = planned_browser(name, cdp=cdp)
     env = plan['resources'].copy()
-    env.update(plan['addresses'], INSTANCE=name, WEB_PORT=str(settings(name)['port']), CHROMIUM_IMAGE=plan['image'], NETWORK_IMAGE=plan['network_image'], CDP_ENABLED='1' if cdp else '0', PROXY_REVISION=revision)
+    env.update(
+        plan['addresses'],
+        INSTANCE=name,
+        WEB_PORT=str(settings(name)['port']),
+        CHROMIUM_IMAGE=plan['image'],
+        NETWORK_IMAGE=plan['network_image'],
+        CDP_ENABLED='1' if cdp else '0',
+        PROXY_REVISION=revision,
+    )
     env['BROWSER_REVISION'] = plan['revision']
     if keep_browser and keep_browser.get('image') and keep_browser.get('revision'):
         # 只切换代理时，沿用正在运行的浏览器镜像和修订号，避免 compose 重建浏览器。
@@ -376,12 +472,25 @@ def _prepare_clipboard_helper():
     target = CONFIGS / 'bin/cbc-clipboard-image'
     target.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='.clipboard-build-', dir=target.parent) as directory:
-        docker('run', '--rm', '--platform', 'linux/arm64',
-               '-v', f'{CONFIGS / "cbc-clipboard-image.c"}:/src/cbc-clipboard-image.c:ro',
-               '-v', f'{directory}:/out', '-w', '/src', 'alpine:3.24', 'sh', '-ec',
-               'apk add --no-cache gcc musl-dev libx11-dev && '
-               'gcc -O2 -Wall -Wextra -o /out/cbc-clipboard-image /src/cbc-clipboard-image.c -lX11',
-               capture=False, timeout=IMAGE_BUILD_TIMEOUT)
+        docker(
+            'run',
+            '--rm',
+            '--platform',
+            'linux/arm64',
+            '-v',
+            f'{CONFIGS / "cbc-clipboard-image.c"}:/src/cbc-clipboard-image.c:ro',
+            '-v',
+            f'{directory}:/out',
+            '-w',
+            '/src',
+            'alpine:3.24',
+            'sh',
+            '-ec',
+            'apk add --no-cache gcc musl-dev libx11-dev && '
+            'gcc -O2 -Wall -Wextra -o /out/cbc-clipboard-image /src/cbc-clipboard-image.c -lX11',
+            capture=False,
+            timeout=IMAGE_BUILD_TIMEOUT,
+        )
         prepared = Path(directory) / 'cbc-clipboard-image'
         prepared.chmod(0o755)
         os.replace(prepared, target)
@@ -390,7 +499,9 @@ def _prepare_clipboard_helper():
 def init():
     database = ROOT / 'backend/resources/Country.mmdb'
     if not database.is_file() or database.stat().st_size == 0:
-        raise ValueError(f'缺少或为空的 Country.mmdb：请手动准备合法取得的国家数据库并放到 {database}，详见 backend/resources/README.md。')
+        raise ValueError(
+            f'缺少或为空的 Country.mmdb：请手动准备合法取得的国家数据库并放到 {database}，详见 backend/resources/README.md。'
+        )
     docker('info', '--format', '{{.ServerVersion}}')
     _prepare_mihomo()
     _prepare_clipboard_helper()
@@ -420,17 +531,55 @@ def init():
             entry['names'].remove('unshare')
     # Keep mount/cgroup/UTS/IPC namespace creation denied; permit Chromium's
     # unprivileged user/PID/network sandbox. clone3 retains upstream ENOSYS.
-    browser['syscalls'].extend([
-        {'names': ['unshare'], 'action': 'SCMP_ACT_ALLOW', 'args': [{'index': 0, 'value': 0xEFFFFFFF, 'valueTwo': 0, 'op': 'SCMP_CMP_MASKED_EQ'}]},
-        {'names': ['clone'], 'action': 'SCMP_ACT_ALLOW', 'args': [{'index': 0, 'value': 0x0E020000, 'valueTwo': 0, 'op': 'SCMP_CMP_MASKED_EQ'}]},
-    ])
+    browser['syscalls'].extend(
+        [
+            {
+                'names': ['unshare'],
+                'action': 'SCMP_ACT_ALLOW',
+                'args': [{'index': 0, 'value': 0xEFFFFFFF, 'valueTwo': 0, 'op': 'SCMP_CMP_MASKED_EQ'}],
+            },
+            {
+                'names': ['clone'],
+                'action': 'SCMP_ACT_ALLOW',
+                'args': [{'index': 0, 'value': 0x0E020000, 'valueTwo': 0, 'op': 'SCMP_CMP_MASKED_EQ'}],
+            },
+        ]
+    )
     save_json(CONFIGS / 'seccomp-chromium.json', browser)
-    docker('build', '--platform', 'linux/arm64', '--build-arg', f"GOST_IMAGE={records['gost']['reference']}", '-t', 'cbc-network:1', ROOT / 'container', capture=False, timeout=IMAGE_BUILD_TIMEOUT)
+    docker(
+        'build',
+        '--platform',
+        'linux/arm64',
+        '--build-arg',
+        f'GOST_IMAGE={records["gost"]["reference"]}',
+        '-t',
+        'cbc-network:1',
+        ROOT / 'container',
+        capture=False,
+        timeout=IMAGE_BUILD_TIMEOUT,
+    )
     network = json.loads(docker('image', 'inspect', 'cbc-network:1', timeout=COMMAND_TIMEOUT).stdout)[0]
     records['network'] = {'tag': 'cbc-network:1', 'reference': network['Id'], 'uncompressed_bytes': network['Size']}
-    docker('build', '--platform', 'linux/arm64', '--build-arg', f"CHROMIUM_BASE={records['chromium']['reference']}", '-f', ROOT / 'container/Dockerfile.browser', '-t', 'cbc-chromium:1', ROOT / 'container', capture=False, timeout=IMAGE_BUILD_TIMEOUT)
+    docker(
+        'build',
+        '--platform',
+        'linux/arm64',
+        '--build-arg',
+        f'CHROMIUM_BASE={records["chromium"]["reference"]}',
+        '-f',
+        ROOT / 'container/Dockerfile.browser',
+        '-t',
+        'cbc-chromium:1',
+        ROOT / 'container',
+        capture=False,
+        timeout=IMAGE_BUILD_TIMEOUT,
+    )
     browser_image = json.loads(docker('image', 'inspect', 'cbc-chromium:1', timeout=COMMAND_TIMEOUT).stdout)[0]
-    records['browser'] = {'tag': 'cbc-chromium:1', 'reference': browser_image['Id'], 'uncompressed_bytes': browser_image['Size']}
+    records['browser'] = {
+        'tag': 'cbc-chromium:1',
+        'reference': browser_image['Id'],
+        'uncompressed_bytes': browser_image['Size'],
+    }
     save_json(ROOT / 'images.lock.json', records)
     for name in instances():
         prepare(name)
@@ -439,6 +588,7 @@ def init():
 
 def start(name, cdp=False):
     import store
+
     if settings(name).get('deleting'):
         raise ValueError(f'{name} 已开始彻底删除，只能继续清理，不能启动或重启。')
     if settings(name).get('trashed_at'):
@@ -459,7 +609,7 @@ def start(name, cdp=False):
             detail = f'全局节点“{selected_label(name) or "手动 SOCKS5"}”'
         else:
             detail = '离线保护中，尚未选择节点'
-        url = f"http://127.0.0.1:{settings(name)['port']}"
+        url = f'http://127.0.0.1:{settings(name)["port"]}'
         print(f'{name} 已启动：{url}，{detail}。请运行 check-proxy.sh 验证出口。')
         if configured:
             store.lock_proxy(name)
@@ -476,6 +626,7 @@ def start(name, cdp=False):
 def save_start_failure_diagnostics(name):
     """诊断仅作辅助；读取或保存失败不能阻止启动失败后的安全收尾。"""
     import store
+
     try:
         secret_values = catalog.secret_values(read_json(CONFIGS / name / 'proxy.json'))
         mihomo_file = CONFIGS / name / 'runtime/mihomo.json'
@@ -502,7 +653,23 @@ def close_browser(name):
     try:
         if not active(name):
             return
-        result = docker('exec', '--user', '1000', container(name, 'browser'), 'env', 'DISPLAY=:0', 'xdotool', 'search', '--onlyvisible', '--class', 'chromium', 'windowquit', '%@', check=False, timeout=20)
+        result = docker(
+            'exec',
+            '--user',
+            '1000',
+            container(name, 'browser'),
+            'env',
+            'DISPLAY=:0',
+            'xdotool',
+            'search',
+            '--onlyvisible',
+            '--class',
+            'chromium',
+            'windowquit',
+            '%@',
+            check=False,
+            timeout=20,
+        )
     except subprocess.TimeoutExpired:
         # 关闭命令没有返回时不能改用 docker kill，否则刚写入的 Cookie 可能来不及落盘。
         raise RuntimeError(f'{name} 无法正常关闭 Chromium；为避免丢失刚写入的 Cookie，保留运行状态。') from None
@@ -523,6 +690,7 @@ def close_browser(name):
 
 def stop(name):
     import store
+
     store.set_run_intent(name, False)
     close_browser(name)
     down(name, timeout=15)
@@ -537,7 +705,21 @@ def observe_exit_info(name):
     """以 Claude 看到的出口为准；其他检测站的 IP 不能替代它。"""
     addr = addresses(name)
     try:
-        result = docker('exec', container(name, 'guard'), 'curl', '-fsS', '--max-time', '10', '--noproxy', '', '--proxy', f"http://{addr['BRIDGE_IP']}:8080", 'https://claude.ai/cdn-cgi/trace', check=False, timeout=15)
+        result = docker(
+            'exec',
+            container(name, 'guard'),
+            'curl',
+            '-fsS',
+            '--max-time',
+            '10',
+            '--noproxy',
+            '',
+            '--proxy',
+            f'http://{addr["BRIDGE_IP"]}:8080',
+            'https://claude.ai/cdn-cgi/trace',
+            check=False,
+            timeout=15,
+        )
     except (OSError, subprocess.TimeoutExpired):
         return {'ip': None, 'country_code': None}
     if result.returncode:
@@ -567,6 +749,7 @@ def baseline_exit_country(name):
     """
     import geolocation
     import store
+
     try:
         record = store.load_exits().get(name)
     except (OSError, ValueError):  # SharedRecordError 是 ValueError 的子类
@@ -597,7 +780,9 @@ def require_same_country(name, observation):
     elif not readable:
         detail = '出口记录无法读取，无法确认出口是否与上次一致。原绑定和原记录已保留，请检查出口记录。'
     else:
-        detail = f'Claude 出口国家（{exit_country}）与上次成功时（{baseline}）不同。原绑定已保留，请检查原节点或新建实例。'
+        detail = (
+            f'Claude 出口国家（{exit_country}）与上次成功时（{baseline}）不同。原绑定已保留，请检查原节点或新建实例。'
+        )
     if observation.get('status') == 'failed':
         detail = '代理连接失败。' + detail
     try:
@@ -610,6 +795,7 @@ def require_same_country(name, observation):
         detail += ' 已断开本实例代理。'
     try:
         import store
+
         store.save_exit(name, 'failed', None, detail)
     except (OSError, ValueError):
         # 网络拒绝优先；损坏记录不能掩盖拒绝原因，也不能被空记录覆盖。
@@ -620,12 +806,26 @@ def require_same_country(name, observation):
 def probe_proxy(name):
     """先确认本实例代理能访问公网，再读取 Claude 看到的出口 IP 和国家。"""
     import geolocation
+
     address = addresses(name)
-    proxy = f"http://{address['BRIDGE_IP']}:8080"
+    proxy = f'http://{address["BRIDGE_IP"]}:8080'
     try:
         page = docker(
-            'exec', container(name, 'guard'), 'curl', '-fsS', '--max-time', '15', '--noproxy', '',
-            '--proxy', proxy, 'https://example.com', '-o', '/dev/null', check=False, timeout=20,
+            'exec',
+            container(name, 'guard'),
+            'curl',
+            '-fsS',
+            '--max-time',
+            '15',
+            '--noproxy',
+            '',
+            '--proxy',
+            proxy,
+            'https://example.com',
+            '-o',
+            '/dev/null',
+            check=False,
+            timeout=20,
         )
     except (OSError, subprocess.TimeoutExpired):
         return {'status': 'failed', 'ip': None, 'detail': '代理连接失败'}
@@ -644,10 +844,12 @@ def verify_exit(name):
     出口国家不符合要求时，require_same_country 会断开本实例代理并抛出 CountryPolicyError。
     """
     import store
+
     observation = probe_proxy(name)
     require_same_country(name, observation)
-    store.save_exit(name, observation['status'], observation['ip'], observation['detail'],
-                    observation.get('country_code'))
+    store.save_exit(
+        name, observation['status'], observation['ip'], observation['detail'], observation.get('country_code')
+    )
     if observation['status'] == 'failed':
         raise RuntimeError('代理连接失败。实例配置已保留，可以修改代理后再启动。')
     return observation
@@ -656,7 +858,7 @@ def verify_exit(name):
 def wait_until_ready(name):
     """等待 Web UI 可以打开、Chromium 已开始渲染；发现关闭 Sandbox 立即拒绝。"""
     deadline = time.monotonic() + 60
-    url = f"http://127.0.0.1:{settings(name)['port']}"
+    url = f'http://127.0.0.1:{settings(name)["port"]}'
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     while True:
         try:
@@ -670,8 +872,9 @@ def wait_until_ready(name):
     deadline = time.monotonic() + 30
     while True:
         try:
-            processes = docker('exec', container(name, 'browser'), 'ps', '-eo', 'args',
-                               check=False, timeout=5).stdout.splitlines()
+            processes = docker(
+                'exec', container(name, 'browser'), 'ps', '-eo', 'args', check=False, timeout=5
+            ).stdout.splitlines()
         except subprocess.TimeoutExpired:
             processes = []
         chromium = [line for line in processes if line.startswith('/usr/lib/chromium/chromium ')]
@@ -696,7 +899,16 @@ def check_proxy(name):
         return None
     expected = proxy.get('expected_ip', '')
     source = label or '手动 SOCKS5'
-    print(f'{name}：节点“{source}”出口 {value}；' + ('与 expected_ip 一致。' if expected and value == expected else '未设置 expected_ip，无法核对预期。' if not expected else '与 expected_ip 不一致！'))
+    print(
+        f'{name}：节点“{source}”出口 {value}；'
+        + (
+            '与 expected_ip 一致。'
+            if expected and value == expected
+            else '未设置 expected_ip，无法核对预期。'
+            if not expected
+            else '与 expected_ip 不一致！'
+        )
+    )
     return value if not expected or value == expected else None
 
 
@@ -704,22 +916,48 @@ def verify(name):
     if not active(name):
         raise RuntimeError(f'{name} 尚未运行。')
     findings = []
+
     def record(label, passed):
         findings.append({'test': label, 'passed': passed})
         print(f'[{"PASS" if passed else "FAIL"}] {name} {label}')
+
     addr = addresses(name)
     record('本实例 GOST 可连接', probe(name, 'connect', addr['BRIDGE_IP'], '8080', check=False).returncode == 0)
-    for host, port in [('1.1.1.1', '443'), ('8.8.8.8', '53'), ('127.0.0.11', '53'), ('192.168.65.2', '80'), ('2606:4700:4700::1111', '443')]:
+    for host, port in [
+        ('1.1.1.1', '443'),
+        ('8.8.8.8', '53'),
+        ('127.0.0.11', '53'),
+        ('192.168.65.2', '80'),
+        ('2606:4700:4700::1111', '443'),
+    ]:
         record(f'直连 {host}:{port} 被阻断', probe(name, 'connect', host, port, check=False).returncode != 0)
     for other in instances():
         if other != name and active(other):
-            record(f'跨实例 {other} GOST 被阻断', probe(name, 'connect', addresses(other)['BRIDGE_IP'], '8080', check=False).returncode != 0)
-            result = docker('exec', container(name, 'proxy'), 'python3', '/opt/cbc/probe.py', 'connect', addresses(other)['BRIDGE_IP'], '8080', check=False)
+            record(
+                f'跨实例 {other} GOST 被阻断',
+                probe(name, 'connect', addresses(other)['BRIDGE_IP'], '8080', check=False).returncode != 0,
+            )
+            result = docker(
+                'exec',
+                container(name, 'proxy'),
+                'python3',
+                '/opt/cbc/probe.py',
+                'connect',
+                addresses(other)['BRIDGE_IP'],
+                '8080',
+                check=False,
+            )
             record(f'GOST 也不能连接 {other} GOST', result.returncode != 0)
-    result = docker('exec', container(name, 'proxy'), 'python3', '/opt/cbc/probe.py', 'connect', '1.1.1.1', '443', check=False)
+    result = docker(
+        'exec', container(name, 'proxy'), 'python3', '/opt/cbc/probe.py', 'connect', '1.1.1.1', '443', check=False
+    )
     record('GOST 不能连接上游白名单之外的公网', result.returncode != 0)
     info = json.loads(docker('inspect', container(name, 'browser')).stdout)[0]
-    record('浏览器无 NET_ADMIN / SYS_ADMIN / privileged', not info['HostConfig']['Privileged'] and not set(info['HostConfig']['CapAdd'] or []) & {'NET_ADMIN', 'SYS_ADMIN'})
+    record(
+        '浏览器无 NET_ADMIN / SYS_ADMIN / privileged',
+        not info['HostConfig']['Privileged']
+        and not set(info['HostConfig']['CapAdd'] or []) & {'NET_ADMIN', 'SYS_ADMIN'},
+    )
     rules = docker('exec', container(name, 'guard'), 'iptables-save').stdout
     record('OUTPUT 默认拒绝且只有 TCP 例外', ':OUTPUT DROP' in rules and '-p udp' not in rules)
     record('Docker DNS 在 raw/OUTPUT 阻断', '-A OUTPUT -d 127.0.0.11/32 -j DROP' in rules)
@@ -732,7 +970,20 @@ def verify(name):
         docker('stop', '--time', '5', container(name, 'proxy'))
         stopped = True
         record('停止 GOST 后仍无法直连公网', probe(name, 'connect', '1.1.1.1', '443', check=False).returncode != 0)
-        result = docker('exec', container(name, 'guard'), 'curl', '-fsS', '--max-time', '5', '--noproxy', '', '--proxy', f"http://{addr['BRIDGE_IP']}:8080", 'https://example.com', check=False)
+        result = docker(
+            'exec',
+            container(name, 'guard'),
+            'curl',
+            '-fsS',
+            '--max-time',
+            '5',
+            '--noproxy',
+            '',
+            '--proxy',
+            f'http://{addr["BRIDGE_IP"]}:8080',
+            'https://example.com',
+            check=False,
+        )
         record('停止 GOST 后代理请求失败', result.returncode != 0)
         if 'CDP_ENABLED=1' in (CONFIGS / name / 'runtime/compose.env').read_text():
             expression = "(async()=>{try{await fetch('https://example.com/cbc-check?'+Date.now(),{cache:'no-store',signal:AbortSignal.timeout(4000)});return true}catch(e){return false}})()"
@@ -745,7 +996,9 @@ def verify(name):
             # Do not report recovery while a subsequent proxy check can still race.
             end = time.monotonic() + 15
             while True:
-                health = docker('inspect', container(name, 'proxy'), '--format', '{{.State.Health.Status}}', check=False)
+                health = docker(
+                    'inspect', container(name, 'proxy'), '--format', '{{.State.Health.Status}}', check=False
+                )
                 if health.returncode == 0 and health.stdout.strip() == 'healthy':
                     break
                 if time.monotonic() >= end:
@@ -762,12 +1015,30 @@ def benchmark(label):
     stamp = datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%SZ')
     output = {'label': label, 'time_utc': stamp}
     ids = docker('ps', '-q', '--filter', f'label={LABEL}').stdout.split()
-    output['containers'] = [json.loads(line) for line in docker('stats', '--no-stream', '--format', '{{json .}}', *ids).stdout.splitlines()] if ids else []
+    output['containers'] = (
+        [
+            json.loads(line)
+            for line in docker('stats', '--no-stream', '--format', '{{json .}}', *ids).stdout.splitlines()
+        ]
+        if ids
+        else []
+    )
     output['docker_system_df'] = docker('system', 'df').stdout
-    output['docker_info'] = json.loads(docker('info', '--format', '{"server":"{{.ServerVersion}}","vm_memory_limit":{{.MemTotal}},"vcpus":{{.NCPU}}}').stdout)
+    output['docker_info'] = json.loads(
+        docker(
+            'info', '--format', '{"server":"{{.ServerVersion}}","vm_memory_limit":{{.MemTotal}},"vcpus":{{.NCPU}}}'
+        ).stdout
+    )
     output['macos_memory_pressure'] = run(['memory_pressure', '-Q']).stdout
     process = run(['ps', '-axo', 'pid,rss,pcpu,comm'], check=False)
-    output['virtualization_processes'] = [line for line in process.stdout.splitlines() if any(x in line.lower() for x in ['com.docker', '/applications/docker.app/', 'virtualization.virtualmachine', 'orbstack'])]
+    output['virtualization_processes'] = [
+        line
+        for line in process.stdout.splitlines()
+        if any(
+            x in line.lower()
+            for x in ['com.docker', '/applications/docker.app/', 'virtualization.virtualmachine', 'orbstack']
+        )
+    ]
     output['data_du_kib'] = run(['du', '-sk', ROOT / 'data'], timeout=120).stdout
     output['project_du_kib'] = run(['du', '-sk', ROOT], timeout=120).stdout
     if (ROOT / 'images.lock.json').exists():
@@ -811,12 +1082,14 @@ def _port_free(port):
 
 def _restore_snapshot(path, content):
     import store
+
     store._restore_snapshot(path, content)
 
 
 def backup_instance(name, destination):
     """打包一个实例的浏览器数据、代理和它实际绑定的订阅。"""
     import store
+
     name = validate_name(name)
     if not (CONFIGS / name / 'instance.json').exists():
         raise ValueError(f'实例不存在：{name}')
@@ -830,7 +1103,9 @@ def backup_instance(name, destination):
         nodes = None
         if isinstance(selection, dict) and selection.get('subscription_id'):
             subscription_id = selection['subscription_id']
-            subscription = next((item for item in store.load_library()['subscriptions'] if item['id'] == subscription_id), None)
+            subscription = next(
+                (item for item in store.load_library()['subscriptions'] if item['id'] == subscription_id), None
+            )
             if not subscription:
                 raise ValueError('实例绑定的订阅不在订阅库中，没有创建不完整的备份。')
             cache = store._cache_path(subscription_id)
@@ -883,6 +1158,7 @@ def backup_instance(name, destination):
 
 def _install_restored_instance(slug, instance_body, proxy, selection, subscription, nodes, extracted):
     import store
+
     config_dir = CONFIGS / slug
     data_dir = ROOT / 'data' / slug
     subscription_id = selection.get('subscription_id') if isinstance(selection, dict) else None
@@ -942,6 +1218,7 @@ def _install_restored_instance(slug, instance_body, proxy, selection, subscripti
 def erase_instance(slug):
     """彻底删除实例文件。登记留到数据和共享引用都清理完，失败后仍可重试。"""
     import store
+
     slug = validate_name(slug)
     config_dir = CONFIGS / slug
     data_dir = ROOT / 'data' / slug
@@ -968,6 +1245,7 @@ def erase_instance(slug):
 def restore_instance(archive_path):
     """把备份恢复到当前项目。不启动实例，也不覆盖已有实例。"""
     import store
+
     archive_path = Path(archive_path)
     if not archive_path.is_file():
         raise ValueError('找不到备份归档。')
@@ -1023,8 +1301,10 @@ def restore_instance(archive_path):
         node_id = selection.get('node_id') if isinstance(selection, dict) else ''
         if subscription_id:
             if (
-                not isinstance(subscription_id, str) or not re.fullmatch(r'sub[0-9a-f]{12}', subscription_id)
-                or not isinstance(node_id, str) or not re.fullmatch(r'n[0-9a-f]{20}', node_id)
+                not isinstance(subscription_id, str)
+                or not re.fullmatch(r'sub[0-9a-f]{12}', subscription_id)
+                or not isinstance(node_id, str)
+                or not re.fullmatch(r'n[0-9a-f]{20}', node_id)
             ):
                 raise ValueError('备份里的订阅或节点编号无效，没有恢复。')
             node_list = nodes.get('nodes') if isinstance(nodes, dict) else None
@@ -1036,11 +1316,15 @@ def restore_instance(archive_path):
             ):
                 raise ValueError('备份缺少实例绑定的节点，没有恢复。')
             if store.library_exists():
-                current = next((item for item in store.load_library()['subscriptions'] if item['id'] == subscription_id), None)
+                current = next(
+                    (item for item in store.load_library()['subscriptions'] if item['id'] == subscription_id), None
+                )
                 if current and current.get('url') != subscription.get('url'):
                     raise ValueError('本地已有同一个订阅编号，但地址不同，没有覆盖。')
             cache = store._cache_path(subscription_id)
-            if cache.exists() and not any(item.get('id') == selection.get('node_id') for item in store.load_cached_nodes(subscription_id)):
+            if cache.exists() and not any(
+                item.get('id') == selection.get('node_id') for item in store.load_cached_nodes(subscription_id)
+            ):
                 raise ValueError('本地节点缓存和备份不一致，没有覆盖。')
         extracted = root / 'data' / slug
         if extracted.exists() and any(path.is_symlink() for path in extracted.rglob('*')):
@@ -1064,7 +1348,23 @@ def manager_operation(*, exclusive=False):
 
 def main():
     parser = argparse.ArgumentParser(description='Claude Browser Containers 本地管理')
-    parser.add_argument('action', choices=['init', 'start', 'stop', 'restart', 'status', 'create-instance', 'remove-instance', 'check-proxy', 'verify-isolation', 'benchmark', 'backup-instance', 'restore-instance'])
+    parser.add_argument(
+        'action',
+        choices=[
+            'init',
+            'start',
+            'stop',
+            'restart',
+            'status',
+            'create-instance',
+            'remove-instance',
+            'check-proxy',
+            'verify-isolation',
+            'benchmark',
+            'backup-instance',
+            'restore-instance',
+        ],
+    )
     parser.add_argument('names', nargs='*')
     parser.add_argument('--delete-data', action='store_true', help='明确删除数据；默认保留')
     parser.add_argument('--cdp', action='store_true', help='临时启用仅容器本地可达的验收 CDP')
@@ -1097,6 +1397,7 @@ def main():
     success = True
     exits = {}
     import store
+
     for name in instances(args.names):
         with store.instance_operation(name):
             if args.action == 'start':
@@ -1116,8 +1417,14 @@ def main():
             elif args.action == 'status':
                 proxy = read_json(CONFIGS / name / 'proxy.json')
                 label = selected_label(name)
-                state = f'全局节点“{label}”' if label and not proxy['host'] else ('已填写 SOCKS5' if proxy['host'] else '离线保护（未选择节点）')
-                print(f'{name}: {"运行中" if active(name) else "已停止"} http://127.0.0.1:{settings(name)["port"]} {state}')
+                state = (
+                    f'全局节点“{label}”'
+                    if label and not proxy['host']
+                    else ('已填写 SOCKS5' if proxy['host'] else '离线保护（未选择节点）')
+                )
+                print(
+                    f'{name}: {"运行中" if active(name) else "已停止"} http://127.0.0.1:{settings(name)["port"]} {state}'
+                )
             elif args.action == 'remove-instance':
                 print('将删除持久化数据。' if args.delete_data else '将保留 Profile、Cookie、缓存和下载。')
                 if args.delete_data and not (sys.stdin.isatty() and input(f'输入 {name} 确认永久删除数据：') == name):
@@ -1149,6 +1456,7 @@ if __name__ == '__main__':
     # 选择页长期占用进程。空闲时不持有管理锁，避免挡住 start.sh。
     if len(sys.argv) > 1 and sys.argv[1] == 'panel':
         from panel import serve
+
         try:
             serve()
         except (ValueError, RuntimeError, OSError) as error:

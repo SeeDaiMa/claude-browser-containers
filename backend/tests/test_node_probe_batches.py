@@ -1,4 +1,5 @@
 """网页节点检测按批执行，Docker、网络和等待均使用明确的隔离夹具。"""
+
 import json
 import io
 import sys
@@ -16,8 +17,10 @@ from test_node_latency import library as library
 
 
 def many_nodes(library, count):
-    raw = [{**library.raw[0], 'name': f'fixture-node-{index}', 'server': f'203.0.113.{30 + index}'}
-           for index in range(count)]
+    raw = [
+        {**library.raw[0], 'name': f'fixture-node-{index}', 'server': f'203.0.113.{30 + index}'}
+        for index in range(count)
+    ]
     store.refresh_subscription(library.id, lambda _: raw)
     return store.load_cached_nodes(library.id)
 
@@ -32,9 +35,18 @@ def fake_docker(monkeypatch, batches, quality=False):
         if quality:
             assert payload['mode'] == 'quality'
         batches.append([node['id'] for node in nodes])
-        result = ({'status': 'ok', 'ip': '8.8.8.8', 'asn': 15169, 'fraud_score': 0,
-                   'is_residential': False, 'is_broadcast': False}
-                  if quality else {'status': 'ok', 'delay_ms': 42, 'detail': 'fixture'})
+        result = (
+            {
+                'status': 'ok',
+                'ip': '8.8.8.8',
+                'asn': 15169,
+                'fraud_score': 0,
+                'is_residential': False,
+                'is_broadcast': False,
+            }
+            if quality
+            else {'status': 'ok', 'delay_ms': 42, 'detail': 'fixture'}
+        )
         return SimpleNamespace(returncode=0, stdout=json.dumps({node['id']: result for node in nodes}))
 
     monkeypatch.setattr(cbc, 'docker', docker)
@@ -46,8 +58,9 @@ def test_web_latency_uses_three_containers_and_six_task_writes_for_twenty_nodes(
     fake_docker(monkeypatch, batches)
     task = {'state': 'running'}
     monkeypatch.setattr(core, '_persist_tasks', lambda: writes.append(dict(task['progress'])))
-    result = node_probe.test_subscription(library.id, [node['id'] for node in nodes],
-                                          on_progress=lambda *args: core._probe_progress(task, *args))
+    result = node_probe.test_subscription(
+        library.id, [node['id'] for node in nodes], on_progress=lambda *args: core._probe_progress(task, *args)
+    )
     assert [len(batch) for batch in batches] == [8, 8, 4]
     assert [row['completed'] for row in writes] == [0, 8, 8, 16, 16, 20]
     assert result['completed'] == result['succeeded'] == 20
@@ -59,8 +72,9 @@ def test_cancel_keeps_completed_batch_and_does_not_start_the_next_container(libr
     batches = []
     fake_docker(monkeypatch, batches)
     with pytest.raises(node_probe.ProbeCancelled) as caught:
-        node_probe.test_subscription(library.id, [node['id'] for node in nodes],
-                                      on_progress=lambda completed, *_: completed < 8)
+        node_probe.test_subscription(
+            library.id, [node['id'] for node in nodes], on_progress=lambda completed, *_: completed < 8
+        )
     assert [len(batch) for batch in batches] == [8]
     assert caught.value.result['completed'] == caught.value.result['succeeded'] == 8
     current = store.public_nodes(library.id)
@@ -102,7 +116,9 @@ def test_quality_worker_reuses_engine_and_keeps_two_second_node_spacing(library,
     monkeypatch.setattr(worker.urllib.request, 'build_opener', lambda *_args: opener)
     monkeypatch.setattr(worker.socket, 'create_connection', lambda *_args, **_kwargs: closing(io.BytesIO()))
     monkeypatch.setattr(worker.time, 'sleep', waits.append)
-    monkeypatch.setattr(worker, 'measure_quality', lambda port: requests.append(port) or worker.quality_failed('fixture'))
+    monkeypatch.setattr(
+        worker, 'measure_quality', lambda port: requests.append(port) or worker.quality_failed('fixture')
+    )
     worker.main()
     assert launches == [True]
     assert requests == [18080, 18081] and waits == [2]
