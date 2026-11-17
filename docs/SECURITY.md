@@ -6,6 +6,8 @@
 
 - 所有宿主发布端口只绑定 `127.0.0.1`；只有 HTTP Web UI。VNC 5900 和代理 8080 不发布，防火墙拒绝外部连接。节点选择页 `panel.sh` 也只监听 `127.0.0.1:5790`，跑在 Mac 上，不放进浏览器容器；接口不返回节点密码或服务器地址。
 - 浏览器无 privileged、host networking、NET_ADMIN、NET_RAW、SYS_ADMIN。守卫/代理在自己的 network namespace 中初始化规则，不改宿主防火墙。
+- 浏览器容器初始化时由 `novnc-access.sh` 限制 Web UI 的 Host，仅接受该实例端口的 `127.0.0.1` 和 `localhost`；VNC WebSocket 的 Origin 仅接受实例自身地址以及管理台的 `http://127.0.0.1:5790`、`http://localhost:5790`，非法或缺失 Origin 返回 403。普通页面和健康检查可不带 Origin。已有容器需经确认后重建才会加载新增挂载，修改源码不会自动给现有实例应用防护。
+- 截图粘贴接口 `/cbc-clipboard-image` 的 POST 只接受与当前 Host 一致的 Origin，即实例自己的 noVNC 页面；本机其他网页（包括管理台）无法往容器剪贴板写入图片。页面自身查询粘贴状态的 GET 不带 Origin，照常放行。
 - 浏览器新建出站流量只能是 TCP 到自己的 GOST。手动 SOCKS5 时，GOST 只能连接指定上游的 IPv4:端口。选择订阅节点时，GOST 只连接本容器的 `127.0.0.1:1080`，mihomo 只能连接所选节点服务器的固定 IPv4:端口。不导入订阅里的分流规则，因此没有 DIRECT。不转发 IP 包，无其他 UDP/DNS/IPv6 例外。
 - 代理故障不改变规则、不选择 DIRECT、不选用其他实例。停掉守卫会同时失去健康的浏览器 namespace，应通过 `restart.sh` 恢复整实例。
 - `proxy.json` 和运行时配置权限为 600、父目录 700，并由 `.gitignore` 排除；不要把项目 data/configs 的私密内容提交或同步到公开仓库。

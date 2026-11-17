@@ -87,6 +87,7 @@ services:
       WEB_HOST_CLIPBOARD_SYNC: "1"
       CHROMIUM_REMOTE_DEBUGGING: "${CDP_ENABLED:-0}"
       CBC_BRIDGE_IP: "${BRIDGE_IP}"
+      CBC_WEB_PORT: "${WEB_PORT}"
       CBC_BROWSER_REVISION: "${BROWSER_REVISION}"
     volumes:
       - ./data/${INSTANCE}:/config
@@ -98,6 +99,7 @@ services:
       - ./configs/novnc-hidpi.sh:/etc/cont-init.d/18-hidpi.sh:ro
       - ./configs/novnc-ime.sh:/etc/cont-init.d/19-ime.sh:ro
       - ./configs/novnc-ime.js:/opt/noVNC/core/input/cbc-ime.js:ro
+      - ./configs/novnc-access.sh:/etc/cont-init.d/20-local-access.sh:ro
       - ./configs/novnc-clipboard-image.sh:/etc/cont-init.d/21-clipboard-image.sh:ro
       - ./configs/cbc-clipboard-image.nginx.conf:/etc/cbc-clipboard-image.nginx.conf:ro
       - ./configs/bin/cbc-clipboard-image:/usr/local/bin/cbc-clipboard-image:ro

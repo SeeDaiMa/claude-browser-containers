@@ -275,7 +275,7 @@ def planned_browser(name, cdp=False):
     addr = addresses(name)
     revision_source = json.dumps({'resources': env, 'addresses': addr, 'images': lock, 'cdp': cdp, 'port': settings(name)['port']}, sort_keys=True).encode()
     revision_source += (ROOT / 'compose.yaml').read_bytes()
-    for path in ['chromium-params.sh', 'chromium-policy.json', 'seccomp-chromium.json', 'novnc-clipboard-focus.sh', 'novnc-keyboard-shortcuts.sh', 'novnc-native-cursor.sh', 'novnc-hidpi.sh', 'novnc-ime.sh', 'novnc-ime.js', 'novnc-clipboard-image.sh', 'cbc-clipboard-image.nginx.conf', 'cbc-clipboard-image-run.sh', 'bin/cbc-clipboard-image', 'cbc-clipboard-image.c']:
+    for path in ['chromium-params.sh', 'chromium-policy.json', 'seccomp-chromium.json', 'novnc-clipboard-focus.sh', 'novnc-keyboard-shortcuts.sh', 'novnc-native-cursor.sh', 'novnc-hidpi.sh', 'novnc-ime.sh', 'novnc-ime.js', 'novnc-access.sh', 'novnc-clipboard-image.sh', 'cbc-clipboard-image.nginx.conf', 'cbc-clipboard-image-run.sh', 'bin/cbc-clipboard-image', 'cbc-clipboard-image.c']:
         revision_source += (CONFIGS / path).read_bytes()
     return {
         'image': lock['browser']['reference'],

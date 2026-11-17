@@ -18,6 +18,7 @@
 !/configs/chromium-policy.json
 !/configs/novnc-clipboard-focus.sh
 !/configs/novnc-clipboard-image.sh
+!/configs/novnc-access.sh
 !/configs/novnc-hidpi.sh
 !/configs/novnc-ime.js
 !/configs/novnc-ime.sh
