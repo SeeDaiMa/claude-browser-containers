@@ -1,5 +1,6 @@
 """网页和后续任务共用的实例操作。容器动作仍调用 cbc。"""
 import copy
+from collections import deque
 import hashlib
 import json
 import os
@@ -21,6 +22,7 @@ _QUEUE = queue.Queue()
 _NODE_TEST_QUEUE = queue.Queue()
 _SUBSCRIPTION_QUEUE = queue.Queue()
 _GUARD = threading.RLock()
+_ENQUEUE_GUARD = threading.RLock()
 _PERSIST_GUARD = threading.Lock()
 _STATS = {'at': 0.0, 'rows': {}, 'docker_vm_rss_mib': None, 'docker_helper_rss_mib': None, 'error': ''}
 _WORKER = None
@@ -30,6 +32,7 @@ _NETWORK_TASKS = {'test-nodes', 'check-node-quality', 'add-subscription', 'refre
 _RUNTIME = {'at': 0.0, 'docker': {'ok': False, 'detail': ''}, 'containers': None, 'health': {}, 'ids': {}}
 _RUNTIME_GUARD = threading.Lock()
 _COLLECTION_GUARD = threading.RLock()
+ROLES = ('guard', 'proxy', 'browser')
 _KEEP_TASKS = 50
 _PHASES = {
     'create': ['检查环境', '保存配置、分配端口和网络', '启动网络保护和代理', '验证代理连接', '启动 Chromium', '等待 Web UI'],
@@ -82,67 +85,69 @@ def _payload_digest(payload):
 
 
 def enqueue(kind, instance_id='', request_id='', payload=None):
-    digest = _payload_digest(payload)
-    with _GUARD:
-        if request_id:
-            for task in _TASKS.values():
-                if task.get('request_id') == request_id:
-                    same = (
-                        task.get('kind') == kind
-                        and task.get('requested_instance_id', task.get('instance_id')) == instance_id
-                        and task.get('payload_digest') == digest
-                    )
-                    if not same:
-                        raise ValueError('重复的请求标识与原请求不一致。')
-                    return public_task(task)
-        if kind == 'create' and any(task['kind'] == 'create' and task['state'] in ('queued', 'running') for task in _TASKS.values()):
-            raise ValueError('已有一个创建任务正在进行。')
-        if kind in ('test-nodes', 'check-node-quality') and any(
-            task['kind'] == kind and task.get('subscription_id') == payload['subscription_id']
-            and task['state'] in ('queued', 'running') for task in _TASKS.values()
-        ):
-            raise ValueError('此订阅已有节点检测任务，请等待完成。')
+    with _ENQUEUE_GUARD:
+        digest = _payload_digest(payload)
+        with _GUARD:
+            if request_id:
+                for task in _TASKS.values():
+                    if task.get('request_id') == request_id:
+                        same = (
+                            task.get('kind') == kind
+                            and task.get('requested_instance_id', task.get('instance_id')) == instance_id
+                            and task.get('payload_digest') == digest
+                        )
+                        if not same:
+                            raise ValueError('重复的请求标识与原请求不一致。')
+                        return public_task(task)
+            if kind == 'create' and any(task['kind'] == 'create' and task['state'] in ('queued', 'running') for task in _TASKS.values()):
+                raise ValueError('已有一个创建任务正在进行。')
+            if kind in ('test-nodes', 'check-node-quality') and any(
+                task['kind'] == kind and task.get('subscription_id') == payload['subscription_id']
+                and task['state'] in ('queued', 'running') for task in _TASKS.values()
+            ):
+                raise ValueError('此订阅已有节点检测任务，请等待完成。')
         if kind in ('stop', 'trash'):
-            # 用户要求停止后，已排队的自动恢复立即失效，不必等长操作锁释放。
+            # 用户要求停止后，已排队的自动恢复立即失效；磁盘等待不占用任务读取锁。
             row = store.instance_by_id(instance_id)
             store.set_run_intent(row['slug'], False)
-        task_id = 't' + os.urandom(8).hex()
-        task = {
-            'id': task_id,
-            'kind': kind,
-            'instance_id': instance_id,
-            'requested_instance_id': instance_id,
-            'request_id': request_id,
-            'payload_digest': digest,
-            'state': 'queued',
-            'phase': _PHASES.get(kind, ['执行'])[0],
-            'phases': _phase_list(kind),
-            'error': '',
-            'payload': payload or {},
-            'result': {},
-        }
-        _TASKS[task_id] = task
-        if kind in ('test-nodes', 'check-node-quality'):
-            task['subscription_id'] = payload['subscription_id']
-            task['node_ids'] = payload['node_ids']
-        elif kind in ('refresh', 'update-subscription'):
-            task['subscription_id'] = payload['subscription_id']
-        _ORDER.append(task_id)
-        _prune_tasks()
-    try:
-        _persist_tasks()
-    except Exception:
         with _GUARD:
-            _TASKS.pop(task_id, None)
-            _ORDER.remove(task_id)
-        raise
-    if kind in ('test-nodes', 'check-node-quality'):
-        _NODE_TEST_QUEUE.put(task_id)
-    elif kind in ('add-subscription', 'refresh', 'update-subscription'):
-        _SUBSCRIPTION_QUEUE.put(task_id)
-    else:
-        _QUEUE.put(task_id)
-    return public_task(task)
+            task_id = 't' + os.urandom(8).hex()
+            task = {
+                'id': task_id,
+                'kind': kind,
+                'instance_id': instance_id,
+                'requested_instance_id': instance_id,
+                'request_id': request_id,
+                'payload_digest': digest,
+                'state': 'queued',
+                'phase': _PHASES.get(kind, ['执行'])[0],
+                'phases': _phase_list(kind),
+                'error': '',
+                'payload': payload or {},
+                'result': {},
+            }
+            _TASKS[task_id] = task
+            if kind in ('test-nodes', 'check-node-quality'):
+                task['subscription_id'] = payload['subscription_id']
+                task['node_ids'] = payload['node_ids']
+            elif kind in ('refresh', 'update-subscription'):
+                task['subscription_id'] = payload['subscription_id']
+            _ORDER.append(task_id)
+            _prune_tasks()
+        try:
+            _persist_tasks()
+        except Exception:
+            with _GUARD:
+                _TASKS.pop(task_id, None)
+                _ORDER.remove(task_id)
+            raise
+        if kind in ('test-nodes', 'check-node-quality'):
+            _NODE_TEST_QUEUE.put(task_id)
+        elif kind in ('add-subscription', 'refresh', 'update-subscription'):
+            _SUBSCRIPTION_QUEUE.put(task_id)
+        else:
+            _QUEUE.put(task_id)
+        return public_task(task)
 
 
 def _prune_tasks():
@@ -229,18 +234,7 @@ def ensure_worker():
 
 
 def _preserve_damaged_record(path):
-    """把无法使用的原文件改名留存，避免后续正常保存把它盖掉。"""
-    if not path.exists():
-        return
-    stamp = time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())
-    damaged = path.with_name(f'{path.name}.{stamp}.damaged')
-    if damaged.exists():
-        damaged = path.with_name(f'{path.name}.{stamp}.{os.urandom(2).hex()}.damaged')
-    path.replace(damaged)
-    try:
-        damaged.chmod(0o600)
-    except OSError:
-        pass
+    store._keep_damaged_copy(path, move=True)
 
 
 def _task_record(task):
@@ -321,43 +315,96 @@ def _persist_tasks():
 
 def _worker(task_queue=None):
     task_queue = _QUEUE if task_queue is None else task_queue
+    if task_queue is _QUEUE:
+        _lifecycle_worker(task_queue)
+        return
     while True:
-        task_id = task_queue.get()
-        with _GUARD:
-            task = _TASKS.get(task_id)
-            if not task or task['state'] == 'interrupted':
-                continue
-            task['state'] = 'running'
+        _run_task(task_queue.get())
+
+
+def _lifecycle_worker(task_queue):
+    # 一个实例一个 FIFO；空队列即退出，长启动不会占用其他实例的停止通道。
+    pending = {}
+    workers = set()
+    guard = threading.Lock()
+
+    def consume(key):
         try:
-            if task['kind'] in _NETWORK_TASKS:
-                # 网络下载和节点检测只在提交配置时持有存储锁，不阻塞实例启停。
-                _dispatch(task)
-            else:
-                with open(cbc.ROOT / '.manager.lock', 'w') as lock:
-                    import fcntl
-                    fcntl.flock(lock, fcntl.LOCK_EX)
-                    _dispatch(task)
-            with _GUARD:
-                cancelled = bool(task.get('cancel_requested'))
-            _finish(task, 'interrupted' if cancelled else 'succeeded',
-                    '已取消，已完成的节点结果已保留。' if cancelled else '')
-        except node_probe.ProbeCancelled as error:
-            with _GUARD:
-                task['result'] = error.result
-            _finish(task, 'interrupted', '已取消，已完成的节点结果已保留。')
-        except Exception as error:
-            try:
-                cancelled = bool(task.get('cancel_requested'))
-                _finish(task, 'interrupted' if cancelled else 'failed',
-                        '已取消，当前检测未完成，之前的结果已保留。' if cancelled else safe_error(error))
-            except Exception:
-                with _GUARD:
-                    task['state'] = 'failed'
-                    task['error'] = '任务失败，结果没有写入。'
+            while True:
+                with guard:
+                    if not pending[key]:
+                        del pending[key]
+                        return
+                    task_id = pending[key].popleft()
+                _run_task(task_id)
         finally:
-            # 任务结束后不再需要原始输入，避免 SOCKS5 密码一直留在内存。
+            with guard:
+                workers.discard(threading.current_thread())
+
+    try:
+        while True:
+            task_id = task_queue.get()
             with _GUARD:
-                task['payload'] = {}
+                task = _TASKS.get(task_id)
+                if not task or task['state'] == 'interrupted':
+                    continue
+                key = task['instance_id']
+            if key:
+                try:
+                    # 历史实例的 ID 和目录名可以不同，仍须进入同一个队列。
+                    key = store.instance_by_id(key)['slug']
+                except (OSError, ValueError):
+                    # 正式执行时保留原有的配置错误响应。
+                    pass
+            with guard:
+                if key in pending:
+                    pending[key].append(task_id)
+                else:
+                    pending[key] = deque([task_id])
+                    worker = threading.Thread(target=consume, args=(key,), name=f'cbc-instance-{key or "create"}', daemon=True)
+                    workers.add(worker)
+                    worker.start()
+    finally:
+        with guard:
+            running = list(workers)
+        for worker in running:
+            worker.join()
+
+
+def _run_task(task_id):
+    with _GUARD:
+        task = _TASKS.get(task_id)
+        if not task or task['state'] == 'interrupted':
+            return
+        task['state'] = 'running'
+    try:
+        if task['kind'] in _NETWORK_TASKS:
+            # 网络下载和节点检测只在提交配置时持有存储锁，不阻塞实例启停。
+            _dispatch(task)
+        else:
+            with cbc.manager_operation():
+                _dispatch(task)
+        with _GUARD:
+            cancelled = bool(task.get('cancel_requested'))
+        _finish(task, 'interrupted' if cancelled else 'succeeded',
+                '已取消，已完成的节点结果已保留。' if cancelled else '')
+    except node_probe.ProbeCancelled as error:
+        with _GUARD:
+            task['result'] = error.result
+        _finish(task, 'interrupted', '已取消，已完成的节点结果已保留。')
+    except Exception as error:
+        try:
+            cancelled = bool(task.get('cancel_requested'))
+            _finish(task, 'interrupted' if cancelled else 'failed',
+                    '已取消，当前检测未完成，之前的结果已保留。' if cancelled else safe_error(error))
+        except Exception:
+            with _GUARD:
+                task['state'] = 'failed'
+                task['error'] = '任务失败，结果没有写入。'
+    finally:
+        # 任务结束后不再需要原始输入，避免 SOCKS5 密码一直留在内存。
+        with _GUARD:
+            task['payload'] = {}
 
 
 def _finish(task, state, error):
@@ -484,11 +531,11 @@ def _create(task, payload):
     store.require_complete_inventory()
     _advance(task, '保存配置、分配端口和网络')
     slug = 'i' + os.urandom(4).hex()
-    port = _allocate_port()
     with store.instance_operation(slug):
         with store.exclusive():
             # 解析期间订阅可能被删除，因此落盘前在存储锁里再检查引用。
             _validate_binding(payload)
+            port = _allocate_port()
             cbc.create(slug, port)
             store.update_instance(slug, lambda raw: raw.update({
                 'id': slug,
@@ -551,13 +598,8 @@ def _allocate_port():
     for port in range(5803, 5900):
         if port in used:
             continue
-        try:
-            import socket
-            with socket.socket() as listener:
-                listener.bind(('127.0.0.1', port))
-        except OSError:
-            continue
-        return port
+        if cbc._port_free(port):
+            return port
     raise ValueError('没有可用的本机端口。')
 
 
@@ -567,12 +609,14 @@ def _boot(task, slug, verify):
     _advance(task, '检查环境')
     _require_docker()
     # 镜像或浏览器配置变了才重建。重建前必须正常关闭，让 Cookie 先写盘。
-    recreate_browser = (not cbc.active(slug)) or cbc.browser_would_change(slug, cdp=False)
-    if cbc.active(slug) and recreate_browser:
+    browser_active = cbc.active(slug)
+    recreate_browser = (not browser_active) or cbc.browser_would_change(slug, cdp=False, is_active=browser_active)
+    if browser_active and recreate_browser:
         cbc.close_browser(slug)
     try:
         _boot_components(task, slug, verify, recreate_browser)
     except Exception as error:
+        cbc.save_start_failure_diagnostics(slug)
         try:
             cbc.cleanup_start_failure(slug, error)
         except Exception as cleanup_error:
@@ -588,7 +632,7 @@ def _boot_components(task, slug, verify, recreate_browser):
         _advance(task, '验证代理连接')
         cbc.verify_exit(slug)
     _advance(task, '启动 Chromium')
-    if recreate_browser or not cbc.active(slug):
+    if recreate_browser:
         cbc.compose(slug, 'up', '-d', '--wait', '--wait-timeout', '90', 'browser', capture=True)
     _advance(task, '等待 Web UI')
     cbc.wait_until_ready(slug)
@@ -715,10 +759,10 @@ def invalidate_runtime():
 def _runtime_state(slug, containers, health=None):
     if containers is None:
         return 'unknown'
-    states = [containers.get(cbc.container(slug, role)) for role in ('guard', 'proxy', 'browser')]
+    states = [containers.get(cbc.container(slug, role)) for role in ROLES]
     running = [state == 'running' for state in states]
     if all(running):
-        if any((health or {}).get(cbc.container(slug, role)) in ('unhealthy', 'starting') for role in ('guard', 'proxy', 'browser')):
+        if any((health or {}).get(cbc.container(slug, role)) in ('unhealthy', 'starting') for role in ROLES):
             return 'degraded'
         return 'running'
     if any(running):
@@ -840,11 +884,11 @@ def _refresh_limits(items, snapshot):
     needed = []
     for item in items:
         slug = item['slug']
-        signature = tuple(snapshot['ids'].get(cbc.container(slug, role)) for role in ('browser', 'proxy', 'guard'))
+        signature = tuple(snapshot['ids'].get(cbc.container(slug, role)) for role in reversed(ROLES))
         cached = _LIMIT_CACHE.get(slug)
         if not cached or now - cached[0] >= 60 or cached[2] != signature:
             needed.append((slug, signature))
-    names = [cbc.container(slug, role) for slug, _signature in needed for role in ('browser', 'proxy', 'guard') if cbc.container(slug, role) in (snapshot['containers'] or {})]
+    names = [cbc.container(slug, role) for slug, _signature in needed for role in reversed(ROLES) if cbc.container(slug, role) in (snapshot['containers'] or {})]
     observed = {}
     if names and snapshot['docker']['ok']:
         try:
@@ -859,7 +903,7 @@ def _refresh_limits(items, snapshot):
             pass
     for slug, signature in needed:
         limits = _compose_limits(slug)
-        for role in ('browser', 'proxy', 'guard'):
+        for role in reversed(ROLES):
             value = observed.get(cbc.container(slug, role))
             if value is not None:
                 limits[role] = value
@@ -877,7 +921,7 @@ def _memory_limits(slug):
 
 
 def _instance_usage(slug, stats):
-    names = [cbc.container(slug, role) for role in ('browser', 'proxy', 'guard')]
+    names = [cbc.container(slug, role) for role in reversed(ROLES)]
     limits = _memory_limits(slug)
     memory = 0.0
     cpu = 0.0
@@ -989,9 +1033,9 @@ def _exit_warnings(rows):
 
 def _diagnostics(slug, containers, health=None):
     if containers is None:
-        return [{'role': role, 'state': 'unknown'} for role in ('guard', 'proxy', 'browser')]
+        return [{'role': role, 'state': 'unknown'} for role in ROLES]
     rows = []
-    for role in ('guard', 'proxy', 'browser'):
+    for role in ROLES:
         name = cbc.container(slug, role)
         state = containers.get(name) or 'absent'
         rows.append({'role': role, 'state': (health or {}).get(name) if state == 'running' and (health or {}).get(name) in ('unhealthy', 'starting') else state})

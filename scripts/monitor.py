@@ -102,6 +102,11 @@ def _eligible(row):
     return proxy.get('mode') in ('subscription', 'socks') and not proxy.get('stale')
 
 
+def _reload_row(row):
+    raw = store.read_instance(row['path'])
+    return {**row, 'raw': raw, 'trashed_at': raw.get('trashed_at') or None}
+
+
 def tick():
     import manager_core as core
     snapshot = core.runtime_snapshot()
@@ -122,31 +127,39 @@ def tick():
         if row['trashed_at'] or _busy(row['id']):
             continue
         try:
-            with store.instance_operation(row['slug'], blocking=False):
-                row = store.instance_by_id(row['id'])
-                if row['trashed_at'] or _busy(row['id']) or not _eligible(row):
-                    continue
-                runtime = core._runtime_state(row['slug'], snapshot['containers'], snapshot['health'])
-                if 'desired_running' not in row['raw'] and runtime == 'running':
-                    # 只接管当前健康运行的旧实例；从不猜测已经停止的旧实例应当启动。
+            if not _eligible(row):
+                continue
+            runtime = core._runtime_state(row['slug'], snapshot['containers'], snapshot['health'])
+            if 'desired_running' not in row['raw'] and runtime == 'running':
+                # Only the short adoption write needs the instance lock.
+                with store.instance_operation(row['slug'], blocking=False):
+                    row = _reload_row(row)
                     def adopt(raw):
                         if 'desired_running' not in raw and not raw.get('trashed_at'):
                             raw.update(desired_running=True, run_generation=secrets.token_hex(8), recovery={})
-                    store.update_instance(row['slug'], adopt)
-                    row = store.instance_by_id(row['id'])
-                state = _state(row)
-                desired = bool(row['raw'].get('desired_running'))
-                if not desired:
+                    row['raw'] = store.update_instance(row['slug'], adopt)
+            if row['trashed_at'] or not row['raw'].get('desired_running'):
+                continue
+            state = _state(row)
+            observation = None
+            if runtime == 'running' and now >= state['next_probe'] and not probed_one:
+                probed_one = True
+                observation = cbc.probe_proxy(row['slug'])
+            with store.instance_operation(row['slug'], blocking=False):
+                current = _reload_row(row)
+                # A slow result belongs only to the same still-running generation.
+                if not _current(current, row['raw'].get('run_generation')) or _busy(row['id']):
                     continue
+                if observation is not None and not _eligible(current):
+                    continue
+                row = current
                 if runtime != 'running':
                     state['component_failures'] += 1
                     state['stable_since'] = None
                 else:
                     state['component_failures'] = 0
                     state['stable_since'] = state['stable_since'] or now
-                    if now >= state['next_probe'] and not probed_one:
-                        probed_one = True
-                        observation = cbc.probe_proxy(row['slug'])
+                    if observation is not None:
                         exits[row['slug']] = store.save_exit(row['slug'], observation['status'], observation['ip'], observation['detail'], observation.get('country_code'))
                         state['probe_failures'] = state['probe_failures'] + 1 if observation['status'] == 'failed' else 0
                         state['next_probe'] = now + (30 if observation['status'] == 'failed' else PROBE_INTERVAL)

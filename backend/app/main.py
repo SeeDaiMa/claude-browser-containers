@@ -9,6 +9,7 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.concurrency import run_in_threadpool
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'scripts'))
@@ -22,6 +23,7 @@ import node_probe
 HOSTS = {'127.0.0.1:5790', 'localhost:5790'}
 ORIGINS = {'http://127.0.0.1:5790', 'http://localhost:5790'}
 DIST = ROOT / 'frontend' / 'dist'
+NODE_PROBE_BODY_BYTES = 256 * 1024
 
 @asynccontextmanager
 async def lifespan(_app):
@@ -53,6 +55,12 @@ async def hide_body_error(_request, error):
     return JSONResponse({'error': str(error)}, status_code=error.status)
 
 
+@app.exception_handler(ValueError)
+async def hide_value_error(_request, error):
+    message = await run_in_threadpool(manager_core.safe_error, error)
+    return JSONResponse({'error': message}, status_code=400)
+
+
 @app.middleware('http')
 async def local_only(request: Request, call_next):
     host = request.headers.get('host', '')
@@ -75,10 +83,7 @@ def instances():
 @app.get('/api/settings')
 def settings():
     """仅公开界面所需的资源配置，不读取代理或订阅凭据。"""
-    try:
-        resources = cbc.resource_env()
-    except ValueError as error:
-        return JSONResponse({'error': manager_core.safe_error(error)}, status_code=400)
+    resources = cbc.resource_env()
     lock_path = ROOT / 'images.lock.json'
     images = cbc.read_json(lock_path) if lock_path.exists() else {}
     return {
@@ -110,10 +115,7 @@ def task(task_id: str):
 
 @app.get('/api/subscriptions')
 def subscriptions():
-    try:
-        return {'subscriptions': store.public_subscriptions()}
-    except ValueError as error:
-        return JSONResponse({'error': manager_core.safe_error(error)}, status_code=400)
+    return {'subscriptions': store.public_subscriptions()}
 
 
 @app.get('/api/subscriptions/{subscription_id}/nodes')
@@ -123,57 +125,51 @@ def nodes(subscription_id: str):
 
 @app.post('/api/subscriptions/{subscription_id}/nodes/test')
 async def test_nodes(subscription_id: str, request: Request):
-    body = await _body(request)
-    try:
+    body = await _body(request, max_bytes=NODE_PROBE_BODY_BYTES)
+    def operation():
         selected = node_probe.select_nodes(subscription_id, body.get('node_ids'))
         return manager_core.enqueue('test-nodes', payload={
             'subscription_id': subscription_id, 'node_ids': [node['id'] for node in selected],
         })
-    except ValueError as error:
-        return JSONResponse({'error': manager_core.safe_error(error)}, status_code=400)
+
+    return await run_in_threadpool(operation)
 
 
 @app.post('/api/subscriptions/{subscription_id}/nodes/quality')
 async def check_node_quality(subscription_id: str, request: Request):
-    body = await _body(request)
-    try:
+    body = await _body(request, max_bytes=NODE_PROBE_BODY_BYTES)
+    def operation():
         selected = node_probe.select_nodes(subscription_id, body.get('node_ids'))
         return manager_core.enqueue('check-node-quality', payload={
             'subscription_id': subscription_id, 'node_ids': [node['id'] for node in selected],
         })
-    except ValueError as error:
-        return JSONResponse({'error': manager_core.safe_error(error)}, status_code=400)
+
+    return await run_in_threadpool(operation)
 
 
 @app.post('/api/subscriptions')
 async def add_subscription(request: Request):
     body = await _body(request)
-    try:
+    def operation():
         name, url = store.validate_subscription(body.get('name'), body.get('url'))
         return manager_core.enqueue('add-subscription', request_id=str(body.get('request_id', '')), payload={'name': name, 'url': url})
-    except ValueError as error:
-        return JSONResponse({'error': manager_core.safe_error(error)}, status_code=400)
+
+    return await run_in_threadpool(operation)
 
 
 @app.post('/api/subscriptions/{subscription_id}/refresh')
 def refresh_subscription(subscription_id: str):
-    try:
-        task = manager_core.enqueue('refresh', request_id='', payload={'subscription_id': subscription_id})
-    except ValueError as error:
-        return JSONResponse({'error': manager_core.safe_error(error)}, status_code=400)
+    task = manager_core.enqueue('refresh', request_id='', payload={'subscription_id': subscription_id})
     return task
 
 
 @app.patch('/api/subscriptions/{subscription_id}')
 async def rename_subscription(subscription_id: str, request: Request):
     body = await _body(request)
-    try:
+    def operation():
         updated = None
         if 'name' in body:
-            preview = body.get('name')
-            cleaned = preview.strip() if isinstance(preview, str) else ''
-            if not cleaned or len(cleaned) > 40:
-                raise ValueError('订阅名称需要 1–40 个字符。')
+            store.validate_subscription_name(body.get('name'))
         if 'url' in body:
             current = next((sub for sub in store.load_library()['subscriptions'] if sub['id'] == subscription_id), None)
             if not current:
@@ -188,34 +184,28 @@ async def rename_subscription(subscription_id: str, request: Request):
         if updated is None:
             raise ValueError('请填写新的名称或订阅地址。')
         return updated
-    except ValueError as error:
-        return JSONResponse({'error': manager_core.safe_error(error)}, status_code=400)
+
+    return await run_in_threadpool(operation)
 
 
 @app.post('/api/tasks/{task_id}/cancel')
 def cancel_task(task_id: str):
-    try:
-        return manager_core.cancel_task(task_id)
-    except ValueError as error:
-        return JSONResponse({'error': manager_core.safe_error(error)}, status_code=400)
+    return manager_core.cancel_task(task_id)
 
 
 @app.delete('/api/subscriptions/{subscription_id}')
 def delete_subscription(subscription_id: str):
-    try:
-        store.delete_subscription(subscription_id)
-    except ValueError as error:
-        return JSONResponse({'error': manager_core.safe_error(error)}, status_code=400)
+    store.delete_subscription(subscription_id)
     return {'ok': True}
 
 
 @app.post('/api/instances')
 async def create_instance(request: Request):
     body = await _body(request)
-    try:
+    def operation():
         return manager_core.enqueue('create', request_id=str(body.get('request_id', '')), payload=_proxy_payload(body) | {'display_name': body.get('display_name', '')})
-    except ValueError as error:
-        return JSONResponse({'error': manager_core.safe_error(error)}, status_code=400)
+
+    return await run_in_threadpool(operation)
 
 
 @app.post('/api/instances/{instance_id}/start')
@@ -246,24 +236,21 @@ def restore_instance(instance_id: str):
 @app.post('/api/instances/{instance_id}/purge')
 async def purge_instance(instance_id: str, request: Request):
     body = await _body(request)
-    try:
+    def operation():
         return manager_core.enqueue('purge', instance_id, payload={'confirm_name': body.get('confirm_name', '')})
-    except ValueError as error:
-        return JSONResponse({'error': manager_core.safe_error(error)}, status_code=400)
+
+    return await run_in_threadpool(operation)
 
 
 @app.post('/api/instances/{instance_id}/proxy/reconfirm')
 def reconfirm_proxy(instance_id: str):
-    try:
-        return manager_core.reconfirm_node(instance_id)
-    except ValueError as error:
-        return JSONResponse({'error': manager_core.safe_error(error)}, status_code=400)
+    return manager_core.reconfirm_node(instance_id)
 
 
 @app.post('/api/instances/{instance_id}/proxy')
 async def apply_proxy(instance_id: str, request: Request):
     body = await _body(request)
-    try:
+    def operation():
         row = store.instance_by_id(instance_id)
         manager_core.ensure_proxy_editable(row)
         payload = _proxy_payload(body)
@@ -273,50 +260,44 @@ async def apply_proxy(instance_id: str, request: Request):
                 raise ValueError('请填写 SOCKS5 密码。')
             payload['password'] = current['password']
         return manager_core.enqueue('apply-proxy', instance_id, payload=payload)
-    except ValueError as error:
-        return JSONResponse({'error': manager_core.safe_error(error)}, status_code=400)
+
+    return await run_in_threadpool(operation)
 
 
 @app.patch('/api/instances/{instance_id}')
 async def rename_instance(instance_id: str, request: Request):
     body = await _body(request)
-    try:
+    def operation():
         return manager_core.rename_instance(instance_id, body.get('display_name', ''))
-    except ValueError as error:
-        return JSONResponse({'error': manager_core.safe_error(error)}, status_code=400)
+
+    return await run_in_threadpool(operation)
 
 
 @app.post('/api/instances/{instance_id}/exit')
 def exit_ip(instance_id: str):
-    try:
-        return manager_core.check_exit(instance_id)
-    except ValueError as error:
-        return JSONResponse({'error': manager_core.safe_error(error)}, status_code=400)
+    return manager_core.check_exit(instance_id)
 
 
 @app.post('/api/instances/{instance_id}/reload-page')
 def reload_page(instance_id: str):
     try:
         return manager_core.reload_browser_page(instance_id)
-    except (ValueError, RuntimeError) as error:
+    except RuntimeError as error:
         return JSONResponse({'error': manager_core.safe_error(error)}, status_code=400)
 
 
 @app.post('/api/instances/{instance_id}/exit/dismiss')
 async def dismiss_exit_change(instance_id: str, request: Request):
     body = await _body(request)
-    try:
+    def operation():
         return manager_core.dismiss_exit_change(instance_id, body.get('change_id'))
-    except ValueError as error:
-        return JSONResponse({'error': manager_core.safe_error(error)}, status_code=400)
+
+    return await run_in_threadpool(operation)
 
 
 def _simple(kind, instance_id):
-    try:
-        store.instance_by_id(instance_id)
-        return manager_core.enqueue(kind, instance_id)
-    except ValueError as error:
-        return JSONResponse({'error': manager_core.safe_error(error)}, status_code=400)
+    store.instance_by_id(instance_id)
+    return manager_core.enqueue(kind, instance_id)
 
 
 def _proxy_payload(body):
@@ -336,12 +317,12 @@ def _proxy_payload(body):
     raise ValueError('请选择一种代理方式。')
 
 
-async def _body(request: Request):
+async def _body(request: Request, max_bytes: int = 16384):
     chunks = []
     size = 0
     async for chunk in request.stream():
         size += len(chunk)
-        if size > 16384:
+        if size > max_bytes:
             raise RequestBodyError('请求过大。', 413)
         chunks.append(chunk)
     raw = b''.join(chunks)

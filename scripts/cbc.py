@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Local-only manager; stdlib only. Credentials are never command arguments."""
 import argparse
+from contextlib import contextmanager
 import datetime
 import fcntl
+import gzip
 import hashlib
 import io
 import ipaddress
@@ -37,6 +39,10 @@ IMAGE_PULL_TIMEOUT = 900
 IMAGE_BUILD_TIMEOUT = 1800
 BACKUP_VERSION = 1
 MAX_BACKUP_MANIFEST_BYTES = 8 * 1024 * 1024
+MIHOMO_URL = 'https://github.com/MetaCubeX/mihomo/releases/download/v1.19.34/mihomo-linux-arm64-v1.19.34.gz'
+MIHOMO_GZIP_SHA256 = 'daaf78a6240a282cdfd75bcbf98fe321f6bd52765cc29e79f344191198f0b50f'
+MIHOMO_BINARY_SHA256 = '022da41e03ce70641a2f50c485b4f69ade8f1c7aeeece2cf1ec45c614a029441'
+MIHOMO_MAX_DOWNLOAD_BYTES = 64 * 1024 * 1024
 
 
 class SandboxError(RuntimeError):
@@ -78,7 +84,8 @@ def save_json(path, value, private=False):
 
 
 def validate_name(name):
-    if not re.fullmatch(r'[a-z][a-z0-9-]{0,31}', name):
+    import store
+    if not re.fullmatch(store.INSTANCE_SLUG_PATTERN, name):
         raise ValueError('实例名须为 1–32 位小写字母、数字或连字符，首位为字母。')
     return name
 
@@ -148,15 +155,10 @@ def create(name, port):
         raise ValueError('端口须在 1024–65535 范围内。')
     if any(settings(n)['port'] == port for n in instances()):
         raise ValueError('该端口已分配给另一个实例。')
-    with socket.socket() as listener:
-        listener.bind(('127.0.0.1', port))
+    _require_free_port(port)
     used = {settings(n)['network_index'] for n in instances()}
-    subnets = []
-    ids = docker('network', 'ls', '-q').stdout.split()
-    if ids:
-        for network in json.loads(docker('network', 'inspect', *ids).stdout):
-            subnets.extend(ipaddress.ip_network(c['Subnet']) for c in network['IPAM']['Config'] or [] if c.get('Subnet'))
-    index = next((i for i in range(1, 255) if i not in used and all(not net.overlaps(ipaddress.ip_network(f'10.{prefix}.{i}.0/29')) for prefix in [231, 232] for net in subnets if net.version == 4)), None)
+    subnets = _network_subnets()
+    index = next((i for i in range(1, 255) if i not in used and not network_index_conflicts(i, subnets)), None)
     if index is None:
         raise ValueError('没有可用的项目子网。')
     directory.mkdir(parents=True, exist_ok=True)
@@ -255,9 +257,11 @@ def resource_env():
     env_path = ROOT / '.env'
     if env_path.exists():
         env_path.chmod(0o600)
-        for line in env_path.read_text().splitlines():
+        for number, line in enumerate(env_path.read_text().splitlines(), 1):
             if not line.strip() or line.lstrip().startswith('#'):
                 continue
+            if '=' not in line:
+                raise ValueError(f'.env 第 {number} 行格式无效，请使用 KEY=VALUE。')
             key, value = line.split('=', 1)
             if key.strip() not in DEFAULTS:
                 raise ValueError('未知 .env 配置项；代理凭据请放入 proxy.json。')
@@ -292,8 +296,8 @@ def running_browser_identity(name):
     return {'image': old.get('Image', ''), 'revision': current.get('CBC_BROWSER_REVISION', '')}
 
 
-def browser_would_change(name, cdp=False):
-    if not active(name):
+def browser_would_change(name, cdp=False, *, is_active=None):
+    if not (active(name) if is_active is None else is_active):
         return False
     running = running_browser_identity(name)
     planned = planned_browser(name, cdp=cdp)
@@ -342,8 +346,53 @@ def prepare(name, cdp=False, keep_browser=None):
     return upstream is not None
 
 
+def _prepare_mihomo():
+    target = ROOT / 'container/mihomo'
+    if target.is_file() and hashlib.sha256(target.read_bytes()).hexdigest() == MIHOMO_BINARY_SHA256:
+        target.chmod(0o755)
+        return
+    with urllib.request.urlopen(MIHOMO_URL, timeout=60) as response:
+        packed = response.read(MIHOMO_MAX_DOWNLOAD_BYTES + 1)
+    if len(packed) > MIHOMO_MAX_DOWNLOAD_BYTES:
+        raise ValueError('mihomo 下载文件过大，未替换原程序。')
+    if hashlib.sha256(packed).hexdigest() != MIHOMO_GZIP_SHA256:
+        raise ValueError('mihomo 下载文件 SHA-256 不符，未替换原程序。')
+    try:
+        binary = gzip.decompress(packed)
+    except (OSError, EOFError) as error:
+        raise ValueError('mihomo 解压失败，未替换原程序。') from error
+    if hashlib.sha256(binary).hexdigest() != MIHOMO_BINARY_SHA256:
+        raise ValueError('mihomo 程序 SHA-256 不符，未替换原程序。')
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix='.mihomo-', dir=target.parent) as directory:
+        prepared = Path(directory) / 'mihomo'
+        prepared.write_bytes(binary)
+        prepared.chmod(0o755)
+        os.replace(prepared, target)
+
+
+def _prepare_clipboard_helper():
+    target = CONFIGS / 'bin/cbc-clipboard-image'
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix='.clipboard-build-', dir=target.parent) as directory:
+        docker('run', '--rm', '--platform', 'linux/arm64',
+               '-v', f'{CONFIGS / "cbc-clipboard-image.c"}:/src/cbc-clipboard-image.c:ro',
+               '-v', f'{directory}:/out', '-w', '/src', 'alpine:3.24', 'sh', '-ec',
+               'apk add --no-cache gcc musl-dev libx11-dev && '
+               'gcc -O2 -Wall -Wextra -o /out/cbc-clipboard-image /src/cbc-clipboard-image.c -lX11',
+               capture=False, timeout=IMAGE_BUILD_TIMEOUT)
+        prepared = Path(directory) / 'cbc-clipboard-image'
+        prepared.chmod(0o755)
+        os.replace(prepared, target)
+
+
 def init():
+    database = ROOT / 'backend/resources/Country.mmdb'
+    if not database.is_file() or database.stat().st_size == 0:
+        raise ValueError(f'缺少或为空的 Country.mmdb：请手动准备合法取得的国家数据库并放到 {database}，详见 backend/resources/README.md。')
     docker('info', '--format', '{{.ServerVersion}}')
+    _prepare_mihomo()
+    _prepare_clipboard_helper()
     if not (ROOT / '.env').exists():
         shutil.copyfile(ROOT / '.env.example', ROOT / '.env')
         (ROOT / '.env').chmod(0o600)
@@ -390,7 +439,7 @@ def start(name, cdp=False):
     if settings(name).get('trashed_at'):
         raise ValueError(f'{name} 在回收站中，请先恢复。')
     generation = store.set_run_intent(name, False)
-    if active(name) and browser_would_change(name, cdp=cdp):
+    if active(name) and browser_would_change(name, cdp=cdp, is_active=True):
         close_browser(name)
     configured = prepare(name, cdp=cdp)
     try:
@@ -411,29 +460,37 @@ def start(name, cdp=False):
             store.lock_proxy(name)
             store.mark_running(name, generation)
     except Exception as error:
-        secrets = catalog.secret_values(read_json(CONFIGS / name / 'proxy.json'))
-        mihomo_file = CONFIGS / name / 'runtime/mihomo.json'
-        if mihomo_file.exists():
-            secrets.extend(catalog.secret_values(read_json(mihomo_file)))
-        diagnostic = []
-        for role in ['guard', 'proxy', 'browser']:
-            try:
-                output = docker('logs', '--tail', '80', container(name, role), check=False, timeout=15)
-            except subprocess.TimeoutExpired:
-                output = subprocess.CompletedProcess(args=(), returncode=1, stdout='', stderr='日志读取超时。')
-            message = output.stdout + output.stderr
-            for secret in secrets:
-                message = message.replace(secret, '[REDACTED]')
-            diagnostic.append(f'{role}:\n{message}')
-        path = CONFIGS / name / 'runtime/start-failure.log'
-        path.write_text('\n'.join(diagnostic))
-        path.chmod(0o600)
-        print(f'启动诊断已脱敏保存：{path}', file=sys.stderr)
+        save_start_failure_diagnostics(name)
         try:
             cleanup_start_failure(name, error)
         except Exception as cleanup_error:
             raise RuntimeError(f'启动失败，安全收尾未完成：{cleanup_error}') from error
         raise
+
+
+def save_start_failure_diagnostics(name):
+    """诊断仅作辅助；读取或保存失败不能阻止启动失败后的安全收尾。"""
+    import store
+    try:
+        secret_values = catalog.secret_values(read_json(CONFIGS / name / 'proxy.json'))
+        mihomo_file = CONFIGS / name / 'runtime/mihomo.json'
+        if mihomo_file.exists():
+            secret_values.extend(catalog.secret_values(read_json(mihomo_file)))
+        diagnostic = []
+        for role in ('guard', 'proxy', 'browser'):
+            try:
+                output = docker('logs', '--tail', '80', container(name, role), check=False, timeout=15)
+                message = output.stdout + output.stderr
+            except (OSError, subprocess.TimeoutExpired):
+                message = '日志暂时无法读取。'
+            for secret in sorted(secret_values, key=len, reverse=True):
+                message = message.replace(secret, '[REDACTED]')
+            diagnostic.append(f'{role}:\n{message}')
+        path = CONFIGS / name / 'runtime/start-failure.log'
+        store._write_private(path, '\n'.join(diagnostic).encode('utf-8'))
+        print(f'启动诊断已脱敏保存：{path}', file=sys.stderr)
+    except Exception:
+        print('启动诊断未能保存，继续执行安全收尾。', file=sys.stderr)
 
 
 def close_browser(name):
@@ -485,9 +542,7 @@ def observe_exit_info(name):
         value = str(ipaddress.ip_address(fields.get('ip', '').strip()))
     except ValueError:
         return {'ip': None, 'country_code': None}
-    code = fields.get('loc', '').strip().upper()
-    country_code = code if len(code) == 2 and code.isascii() and code.isalpha() and code not in ('XX', 'ZZ') else None
-    return {'ip': value, 'country_code': country_code}
+    return {'ip': value, 'country_code': _country(fields.get('loc'))}
 
 
 def observe_exit(name):
@@ -716,29 +771,36 @@ def benchmark(label):
     print(json.dumps(output, indent=2, ensure_ascii=False))
 
 
-def network_index_conflicts(index):
-    """实例使用的两段 /29 是否和现有 Docker 网络重叠。"""
-    ids = docker('network', 'ls', '-q', timeout=15).stdout.split()
+def _network_subnets(timeout=None):
+    options = {} if timeout is None else {'timeout': timeout}
+    ids = docker('network', 'ls', '-q', **options).stdout.split()
     if not ids:
-        return False
-    own = [ipaddress.ip_network(f'10.{prefix}.{index}.0/29') for prefix in (231, 232)]
-    for network in json.loads(docker('network', 'inspect', *ids, timeout=15).stdout):
+        return []
+    subnets = []
+    for network in json.loads(docker('network', 'inspect', *ids, **options).stdout):
         for config in network.get('IPAM', {}).get('Config') or []:
-            subnet = config.get('Subnet')
-            if not subnet:
-                continue
-            net = ipaddress.ip_network(subnet)
-            if net.version == 4 and any(net.overlaps(item) for item in own):
-                return True
-    return False
+            if config.get('Subnet'):
+                subnets.append(ipaddress.ip_network(config['Subnet']))
+    return subnets
+
+
+def network_index_conflicts(index, subnets=None):
+    """实例使用的两段 /29 是否和现有 Docker 网络重叠。可复用一次网络扫描。"""
+    subnets = _network_subnets(timeout=15) if subnets is None else subnets
+    own = [ipaddress.ip_network(f'10.{prefix}.{index}.0/29') for prefix in (231, 232)]
+    return any(net.version == 4 and any(net.overlaps(item) for item in own) for net in subnets)
+
+
+def _require_free_port(port):
+    with socket.socket() as listener:
+        listener.bind(('127.0.0.1', port))
 
 
 def _port_free(port):
-    with socket.socket() as listener:
-        try:
-            listener.bind(('127.0.0.1', port))
-        except OSError:
-            return False
+    try:
+        _require_free_port(port)
+    except OSError:
+        return False
     return True
 
 
@@ -987,6 +1049,14 @@ def restore_instance(archive_path):
     print(f'已恢复 {slug}。实例没有启动；确认代理后运行 ./scripts/start.sh {slug}。')
 
 
+@contextmanager
+def manager_operation(*, exclusive=False):
+    """生命周期共用共享锁；初始化、备份等维护操作等待全部生命周期完成。"""
+    with open(ROOT / '.manager.lock', 'a') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH)
+        yield
+
+
 def main():
     parser = argparse.ArgumentParser(description='Claude Browser Containers 本地管理')
     parser.add_argument('action', choices=['init', 'start', 'stop', 'restart', 'status', 'create-instance', 'remove-instance', 'check-proxy', 'verify-isolation', 'benchmark', 'backup-instance', 'restore-instance'])
@@ -1081,8 +1151,9 @@ if __name__ == '__main__':
             sys.exit(1)
         sys.exit(0)
     try:
-        with open(ROOT / '.manager.lock', 'w') as lock:
-            fcntl.flock(lock, fcntl.LOCK_EX)
+        action = sys.argv[1] if len(sys.argv) > 1 else ''
+        shared = action in ('start', 'stop', 'restart', 'status', 'check-proxy', 'verify-isolation')
+        with manager_operation(exclusive=not shared):
             main()
     except (ValueError, RuntimeError, OSError, KeyError) as error:
         print(f'错误：{error}', file=sys.stderr)

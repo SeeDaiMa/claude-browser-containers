@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useManager } from '../../../app/ManagerProvider'
 import { api, type NodeRow, type Subscription, type Task } from '../../../shared/api/client'
@@ -7,6 +7,8 @@ import { countryFromNodeName } from '../../../shared/lib/nodeCountry'
 import { nodeOccupants } from '../../../shared/model/nodeOccupants'
 import { useNodeTesting } from '../../../shared/lib/useNodeTesting'
 import { useNodeQuality } from '../../../shared/lib/useNodeQuality'
+import { useNodeSearch } from '../../../shared/lib/useNodeSearch'
+import { useNodeOccupancyIndex } from '../../../shared/lib/useNodeOccupancyIndex'
 import { isActive, isFinished, TASK_LABELS } from '../../../shared/model/status'
 import { NodeTaskNotice } from '../../../shared/ui/NodeTaskNotice'
 import { Badge } from '../../../shared/ui/Badge'
@@ -23,8 +25,7 @@ import {
   Select,
 } from '../../../shared/ui/Controls'
 import { Icon } from '../../../shared/ui/Icon'
-import { NodeLatency } from '../../../shared/ui/NodeLatency'
-import { NodeQualityCells } from '../../../shared/ui/NodeQuality'
+import { SubscriptionNodeRow } from '../components/SubscriptionNodeRow'
 
 type LibraryPreferences = {
   tab: 'subscriptions' | 'nodes'
@@ -33,6 +34,7 @@ type LibraryPreferences = {
   query: string
 }
 const LIBRARY_PREFERENCES_KEY = 'cbc-library-preferences'
+const NODE_PAGE_SIZE = 50
 type LibraryNode = NodeRow & { subscriptionId: string }
 const nodeKey = (node: LibraryNode) => `${node.subscriptionId}:${node.id}`
 
@@ -58,8 +60,9 @@ function savedLibraryPreferences(): LibraryPreferences {
 
 export function SubscriptionsPage() {
   const { data, subscriptions, tasks, submitTask, isBusy, refresh, notify, draft } = useManager()
-  const { activeTest, testNodes } = useNodeTesting()
-  const { activeQuality, qualityBusy, checkQuality } = useNodeQuality()
+  const { activeTest, isNodeTesting, testNodes } = useNodeTesting()
+  const { qualityBusy, isNodeChecking, checkQuality } = useNodeQuality()
+  const occupancy = useNodeOccupancyIndex(data)
   const [params, setParams] = useSearchParams()
   const returnParam = params.get('return') || ''
   const back = /^\/(new|instance\/[^/]+\/edit)$/.test(returnParam) ? returnParam : ''
@@ -98,6 +101,7 @@ export function SubscriptionsPage() {
   const [nodesFetched, setNodesFetched] = useState(false)
   const nodeRequests = useRef(new Map<string, { key: string; request: Promise<LibraryNode[]> }>())
   const [nodeAction, setNodeAction] = useState<'test' | 'quality' | null>(null)
+  const [nodePage, setNodePage] = useState(0)
   const addTask = tasks.find((task) => task.id === addTaskId) || submittedTask
   const addingBusy = pending || !!(addTask && isActive(addTask))
 
@@ -110,6 +114,7 @@ export function SubscriptionsPage() {
   }, [preferences])
 
   function changeTab(tab: LibraryPreferences['tab']) {
+    setNodePage(0)
     setPreferences((previous) => ({ ...previous, tab }))
     setSelectedNodeKeys(new Set())
     if (params.has('view')) {
@@ -120,6 +125,7 @@ export function SubscriptionsPage() {
   }
 
   function changeFilters(changes: Partial<Pick<LibraryPreferences, 'source' | 'country' | 'query'>>) {
+    setNodePage(0)
     setPreferences((previous) => ({ ...previous, ...changes }))
     setSelectedNodeKeys(new Set())
   }
@@ -257,36 +263,41 @@ export function SubscriptionsPage() {
     () => nodes.map((node) => ({ ...node, country: countryFromNodeName(node.name) })),
     [nodes],
   )
-  const countries = new Map(nodesWithCountry.map((node) => [
+  const countries = useMemo(() => new Map(nodesWithCountry.map((node) => [
     node.country?.code || 'unknown',
     node.country?.label || '未识别国家／地区',
-  ]))
+  ])), [nodesWithCountry])
   const country = countries.has(preferences.country) ? preferences.country : 'all'
-  const searchQuery = query.trim().toLowerCase()
-  const visible = nodesWithCountry.filter(
+  const searched = useNodeSearch(nodesWithCountry, query)
+  const visible = useMemo(() => searched.filter(
     (node) =>
       (source === 'all' || source === node.subscriptionId) &&
-      (country === 'all' || country === (node.country?.code || 'unknown')) &&
-      `${node.name} ${node.type}`.toLowerCase().includes(searchQuery),
-  )
-  const testable = visible.filter((node) => node.supported)
-  const selectedNodes = testable.filter((node) => selectedNodeKeys.has(nodeKey(node)))
+      (country === 'all' || country === (node.country?.code || 'unknown')),
+  ), [searched, source, country])
+  const testable = useMemo(() => visible.filter((node) => node.supported), [visible])
+  const selectedNodes = useMemo(() => testable.filter((node) => selectedNodeKeys.has(nodeKey(node))), [testable, selectedNodeKeys])
+  const sourceIds = useMemo(() => [...new Set(nodes.map((node) => node.subscriptionId))], [nodes])
+  const busySources = new Map(sourceIds.map((id) => [id, isBusy(id) || qualityBusy(id)]))
+  const pageCount = Math.max(1, Math.ceil(visible.length / NODE_PAGE_SIZE))
+  const pageIndex = Math.min(nodePage, pageCount - 1)
+  const pageNodes = visible.slice(pageIndex * NODE_PAGE_SIZE, (pageIndex + 1) * NODE_PAGE_SIZE)
+  useEffect(() => { setNodePage((current) => Math.min(current, pageCount - 1)) }, [pageCount])
   const allVisibleSelected = testable.length > 0 && selectedNodes.length === testable.length
   const nodeActionsDisabled =
     nodeLoading || !!nodeError || !selectedNodes.length ||
-    selectedNodes.some((node) => isBusy(node.subscriptionId) || qualityBusy(node.subscriptionId))
+    selectedNodes.some((node) => busySources.get(node.subscriptionId))
   const testingSelected = selectedNodes.some((node) => !!activeTest(node.subscriptionId))
   const checkingSelected = selectedNodes.some((node) => qualityBusy(node.subscriptionId))
   const showNodeLoading = !nodesFetched || (nodeLoading && !nodes.length)
 
-  function toggleNode(node: LibraryNode, checked: boolean) {
+  const toggleNode = useCallback((node: LibraryNode, checked: boolean) => {
     setSelectedNodeKeys((previous) => {
       const next = new Set(previous)
       if (checked) next.add(nodeKey(node))
       else next.delete(nodeKey(node))
       return next
     })
-  }
+  }, [])
 
   async function runSelectedNodeAction(action: 'test' | 'quality') {
     if (nodeActionsDisabled) return
@@ -619,7 +630,7 @@ export function SubscriptionsPage() {
           <details className="library-help">
             <summary>列表说明</summary>
             <ul className="rules">
-              <li>单个节点可直接点击行内按钮；勾选后可批量测速或检测 IP，表头复选框全选当前列表中支持的节点。切换筛选条件会清空选择。</li>
+              <li>单个节点可直接点击行内按钮；勾选后可批量测速或检测 IP，表头复选框全选筛选结果中支持的节点（包含其他页）。翻页保留选择，切换筛选条件会清空选择。</li>
               <li>国家／地区按节点名称中的国旗或名称识别，不代表实测出口 IP 归属。</li>
               <li>延迟为经节点访问测试网址的耗时，结果也会显示在创建实例时。</li>
               <li>IP 属性和系数由 IPPure 提供，系数范围 0–100%，数值越低风险越低。IP 检测按节点依次进行，结果标注检测时间。</li>
@@ -640,6 +651,14 @@ export function SubscriptionsPage() {
             </div>
           ) : visible.length ? (
             <div className="cm-table-wrap">
+              <div className="cm-row node-pagination" role="group" aria-label="节点分页">
+                <span className="cm-help">第 {pageIndex + 1} / {pageCount} 页 · 每页 {NODE_PAGE_SIZE} 个节点 · 全选包含其他页</span>
+                <span className="spacer" />
+                <Button small variant="ghost" aria-label="上一页节点" disabled={pageIndex === 0}
+                  onClick={() => setNodePage((current) => Math.max(0, current - 1))}>上一页</Button>
+                <Button small variant="ghost" aria-label="下一页节点" disabled={pageIndex + 1 >= pageCount}
+                  onClick={() => setNodePage((current) => Math.min(pageCount - 1, current + 1))}>下一页</Button>
+              </div>
               <table className="cm-table subscription-node-table">
                 <thead>
                   <tr>
@@ -647,8 +666,8 @@ export function SubscriptionsPage() {
                       <input
                         type="checkbox"
                         className="node-checkbox"
-                        aria-label="全选当前列表中支持的节点"
-                        title="全选当前列表中支持的节点"
+                        aria-label="全选筛选结果中支持的节点（包含其他页）"
+                        title="全选筛选结果中支持的节点（包含其他页）"
                         checked={allVisibleSelected}
                         ref={(input) => {
                           if (input) input.indeterminate = selectedNodes.length > 0 && !allVisibleSelected
@@ -668,88 +687,23 @@ export function SubscriptionsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {visible.map((node) => {
-                    const subscription = subscriptionById.get(node.subscriptionId)
-                    const checking = !!activeQuality(node.subscriptionId)?.node_ids?.includes(node.id)
-                    const selected = node.supported && selectedNodeKeys.has(nodeKey(node))
-                    const occupants = nodeOccupants(data, node.id, node.used_by)
-                    return (
-                      <tr key={nodeKey(node)} className={`cm-tr${selected ? ' is-selected' : ''}`}>
-                        <td className="node-select-cell">
-                          <input
-                            type="checkbox"
-                            className="node-checkbox"
-                            aria-label={`选择节点 ${node.name}`}
-                            title={node.supported ? `选择节点 ${node.name}` : '此节点协议暂不支持，无法选择'}
-                            checked={selected}
-                            disabled={!node.supported || !!nodeError}
-                            onChange={(event) => toggleNode(node, event.target.checked)}
-                          />
-                        </td>
-                        <td className="node-source-cell">
-                          {subscription?.name || '已删除的订阅'}
-                          {subscription?.last_error && (
-                            <div className="cm-cell-sub tone-warn">缓存数据</div>
-                          )}
-                        </td>
-                        <td>
-                          <div className="cm-cell-name">
-                            <strong>{node.name}</strong>
-                            <span className="cm-cell-sub cm-mono">{node.id}</span>
-                          </div>
-                        </td>
-                        <td>
-                          <div className="cm-status">
-                            <span className="cm-badge">{node.type}</span>
-                            {!node.supported && (
-                              <span className="cm-cell-sub">不支持 · {node.reason}</span>
-                            )}
-                          </div>
-                        </td>
-                        <td>
-                          <NodeLatency
-                            node={node}
-                            testing={!!activeTest(node.subscriptionId)?.node_ids?.includes(node.id)}
-                          />
-                        </td>
-                        <NodeQualityCells node={node} checking={checking} />
-                        <td>
-                          {occupants.length ? (
-                            joinNames(
-                              occupants.map(
-                                (user) => user.name + (user.trashed ? '（回收站）' : ''),
-                              ),
-                            )
-                          ) : (
-                            <span className="cm-muted">—</span>
-                          )}
-                        </td>
-                        <td>
-                          <div className="node-row-actions">
-                            <Button
-                              small
-                              variant="tint-primary"
-                              aria-label={`测速节点 ${node.name}`}
-                              disabled={!node.supported || !!nodeError || isBusy(node.subscriptionId) || qualityBusy(node.subscriptionId)}
-                              onClick={() => void testNodes(node.subscriptionId, [node.id])}
-                            >
-                              测速
-                            </Button>
-                            <Button
-                              small
-                              variant="tint-primary"
-                              aria-label={`检测节点 IP ${node.name}`}
-                              disabled={!node.supported || !!nodeError || isBusy(node.subscriptionId) || qualityBusy(node.subscriptionId)}
-                              busy={checking}
-                              onClick={() => void checkQuality(node.subscriptionId, [node.id])}
-                            >
-                              {checking ? '检测中…' : '检测 IP'}
-                            </Button>
-                          </div>
-                        </td>
-                      </tr>
-                    )
-                  })}
+                  {pageNodes.map((node) => (
+                    <SubscriptionNodeRow
+                      key={nodeKey(node)}
+                      node={node}
+                      sourceName={subscriptionById.get(node.subscriptionId)?.name || '已删除的订阅'}
+                      sourceFailed={!!subscriptionById.get(node.subscriptionId)?.last_error}
+                      selected={node.supported && selectedNodeKeys.has(nodeKey(node))}
+                      selectionDisabled={!!nodeError}
+                      actionDisabled={!!nodeError || !!busySources.get(node.subscriptionId)}
+                      testing={isNodeTesting(node.subscriptionId, node.id)}
+                      checking={isNodeChecking(node.subscriptionId, node.id)}
+                      occupants={nodeOccupants(occupancy, node.id, node.used_by)}
+                      onToggle={toggleNode}
+                      onTest={testNodes}
+                      onQuality={checkQuality}
+                    />
+                  ))}
                 </tbody>
               </table>
             </div>

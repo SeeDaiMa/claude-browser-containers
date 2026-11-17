@@ -544,3 +544,108 @@ def test_retry_delay_starts_when_slow_attempt_finishes(isolated, monkeypatch):
         core._dispatch(task('recover', generation='generation'))
     retry = store.instance_by_id('ifixture')['raw']['recovery']
     assert retry['next_retry_at'] == 500.0 + monitor.RETRY_DELAYS[0]
+
+
+def test_storage_lock_wait_does_not_stall_overview_requests(isolated, monkeypatch):
+    from pathlib import Path
+
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1]))
+    from fastapi.testclient import TestClient
+    from app import main
+
+    instance(isolated, desired_running=False)
+    monkeypatch.setattr(store, 'migrate', lambda: None)
+    monkeypatch.setattr(core, 'ensure_worker', lambda: None)
+    monkeypatch.setattr(core, 'runtime_snapshot', lambda: {
+        'docker': {'ok': False}, 'containers': None, 'health': {}, 'ids': {},
+    })
+    entered = threading.Event()
+    rename_instance = core.rename_instance
+
+    def rename(instance_id, display_name):
+        entered.set()
+        return rename_instance(instance_id, display_name)
+
+    monkeypatch.setattr(core, 'rename_instance', rename)
+    with TestClient(main.app, base_url='http://127.0.0.1:5790') as client:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+            # The caller thread owns the real flock while the ASGI request tries to write.
+            with store.exclusive():
+                writing = pool.submit(client.patch, '/api/instances/ifixture',
+                                      headers={'X-CBC-Request': '1'}, json={'display_name': '新名称'})
+                assert entered.wait(3)
+                reading = pool.submit(client.get, '/api/instances')
+                try:
+                    response = reading.result(timeout=1)
+                except concurrent.futures.TimeoutError:
+                    pytest.fail('等待存储锁的写请求阻塞了实例轮询')
+                assert response.status_code == 200
+                assert response.json()['instances'][0]['display_name'] == '测试实例'
+                assert not writing.done()
+            result = writing.result(timeout=3)
+            assert result.status_code == 200
+            assert result.json()['display_name'] == '新名称'
+    assert store.instance_by_id('ifixture')['display_name'] == '新名称'
+    cbc.docker.assert_not_called()
+
+
+def test_monitor_scans_inventory_once_per_tick(isolated, monkeypatch):
+    for number in range(3):
+        instance(isolated, f'ifixture{number}', port=5810+number, network_index=20+number)
+    monkeypatch.setattr(core, 'runtime_snapshot', lambda: snapshot())
+    scan = Mock(wraps=store.scan_instances)
+    monkeypatch.setattr(store, 'scan_instances', scan)
+    monitor.tick()
+    assert scan.call_count == 1
+    cbc.docker.assert_not_called()
+
+
+def test_monitor_probe_allows_rename_without_losing_new_name(isolated, monkeypatch):
+    row = instance(isolated)
+    monitor._state(row)['next_probe'] = 0
+    monkeypatch.setattr(core, 'runtime_snapshot', lambda: snapshot())
+    entered, release = threading.Event(), threading.Event()
+
+    def probe(_slug):
+        entered.set()
+        assert release.wait(3)
+        return {'status': 'ok', 'ip': '192.0.2.20', 'detail': ''}
+
+    monkeypatch.setattr(cbc, 'probe_proxy', probe)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+        checking = pool.submit(monitor.tick)
+        assert entered.wait(3)
+        try:
+            assert core.rename_instance(row['id'], '探测期间改名')['display_name'] == '探测期间改名'
+        finally:
+            release.set()
+        checking.result(timeout=3)
+    assert store.instance_by_id(row['id'])['display_name'] == '探测期间改名'
+    assert store.load_exits()[row['slug']]['ip'] == '192.0.2.20'
+    cbc.docker.assert_not_called()
+
+
+@pytest.mark.parametrize('change', ['stop', 'generation', 'trash', 'delete'])
+def test_monitor_discards_probe_result_after_instance_changes(isolated, monkeypatch, change):
+    row = instance(isolated)
+    monitor._state(row)['next_probe'] = 0
+    monkeypatch.setattr(core, 'runtime_snapshot', lambda: snapshot())
+    queued = Mock()
+    monkeypatch.setattr(core, 'enqueue', queued)
+
+    def probe(_slug):
+        if change == 'delete':
+            (store.CONFIGS / row['slug'] / 'instance.json').unlink()
+        elif change == 'stop':
+            store.set_run_intent(row['slug'], False)
+        elif change == 'generation':
+            store.set_run_intent(row['slug'], True)
+        else:
+            store.update_instance(row['slug'], lambda raw: raw.update(trashed_at=store._now()))
+        return {'status': 'failed', 'ip': None, 'detail': '旧探测结果'}
+
+    monkeypatch.setattr(cbc, 'probe_proxy', probe)
+    monitor.tick()
+    assert row['slug'] not in store.load_exits()
+    queued.assert_not_called()
+    cbc.docker.assert_not_called()

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useManager } from '../../../app/ManagerProvider'
 import { api, type NodeRow } from '../../../shared/api/client'
 import { formatAgo, joinNames } from '../../../shared/lib/format'
@@ -6,6 +6,8 @@ import { nodeOccupants } from '../../../shared/model/nodeOccupants'
 import { NodeTaskNotice } from '../../../shared/ui/NodeTaskNotice'
 import { useNodeTesting } from '../../../shared/lib/useNodeTesting'
 import { useNodeQuality } from '../../../shared/lib/useNodeQuality'
+import { useNodeSearch } from '../../../shared/lib/useNodeSearch'
+import { useNodeOccupancyIndex } from '../../../shared/lib/useNodeOccupancyIndex'
 import type { ProxyDraft } from '../../../shared/model/proxy'
 import { Chip } from '../../../shared/ui/Badge'
 import { Button, ButtonLink, Field, IconButton, Notice, Select } from '../../../shared/ui/Controls'
@@ -139,8 +141,9 @@ export function ProxyEditor({
   onSelectedNodeChange?: (node: NodeRow | undefined) => void
 }) {
   const { data, subscriptions, isBusy } = useManager()
-  const { activeTest, testNodes } = useNodeTesting()
-  const { activeQuality, qualityBusy, checkQuality } = useNodeQuality()
+  const { activeTest, isNodeTesting, testNodes } = useNodeTesting()
+  const { activeQuality, isNodeChecking, qualityBusy, checkQuality } = useNodeQuality()
+  const occupancy = useNodeOccupancyIndex(data)
   const [nodes, setNodes] = useState<NodeRow[]>([])
   const [query, setQuery] = useState('')
   const [sort, setSort] = useState<NodeSort>('default')
@@ -185,16 +188,15 @@ export function ProxyEditor({
     }
   }, [value.subscriptionId, updated, tested, qualityChecked])
 
-  const keyword = query.trim().toLowerCase()
-  const visible = sortNodes(
-    nodes.filter(
+  const searched = useNodeSearch(nodes, query)
+  const visible = useMemo(() => sortNodes(
+    searched.filter(
       (node) =>
-        `${node.name} ${node.type}`.toLowerCase().includes(keyword) &&
         // 已选中的节点始终保留，避免过滤后看不到自己的选择。
         (!onlyUsable || isUsable(node) || node.id === value.nodeId),
     ),
     sort,
-  )
+  ), [searched, onlyUsable, value.nodeId, sort])
   const testedCount = nodes.filter((node) => node.test?.status === 'ok').length
   const selected = nodes.find((node) => node.id === value.nodeId)
   const testable = visible.filter((node) => node.supported)
@@ -202,9 +204,7 @@ export function ProxyEditor({
     onSelectedNodeChange?.(selected)
   }, [selected, onSelectedNodeChange])
 
-  const users = nodeOccupants(data, selected?.id || '', selected?.used_by || []).filter(
-    (user) => user.id !== excludeId,
-  )
+  const users = nodeOccupants(occupancy, selected?.id || '', selected?.used_by, excludeId)
   const addLink = `/subscriptions?return=${encodeURIComponent(returnTo)}&add=1`
   const inputProps = (name: string) => ({
     'aria-invalid': errors[name] ? (true as const) : undefined,
@@ -419,11 +419,9 @@ export function ProxyEditor({
             tabIndex={-1}
           >
             {visible.map((node) => {
-              const nodeUsers = nodeOccupants(data, node.id, node.used_by).filter(
-                (user) => user.id !== excludeId,
-              )
-              const nodeTesting = !!testing?.node_ids?.includes(node.id)
-              const nodeChecking = !!checking?.node_ids?.includes(node.id)
+              const nodeUsers = nodeOccupants(occupancy, node.id, node.used_by, excludeId)
+              const nodeTesting = isNodeTesting(value.subscriptionId, node.id)
+              const nodeChecking = isNodeChecking(value.subscriptionId, node.id)
               const actionDisabled = !node.supported || disabled || isBusy(value.subscriptionId)
               const rowClass = [
                 'cm-node',

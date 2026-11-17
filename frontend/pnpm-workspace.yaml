@@ -3,7 +3,5 @@ overrides:
   '@typescript-eslint/tsconfig-utils': 8.72.0
   '@typescript-eslint/types': 8.72.0
 
-onlyBuiltDependencies:
-  - esbuild
 allowBuilds:
   esbuild: true

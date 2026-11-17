@@ -32,6 +32,46 @@ import { ExitHistory } from '../components/ExitHistory'
 
 // 固定版本 Chromium 的最小窗口宽度为 500px；高度需容纳工具栏及提示条。
 const MIN_BROWSER_VIEWPORT = { width: 500, height: 144 }
+const STOP_CONFIRMATIONS = 3
+
+function useWorkspaceFrame(id: string) {
+  const { subscribeOverview } = useManager()
+  const [frame, setFrame] = useState({ id, visible: false })
+  useEffect(() => {
+    let stopped = 0
+    let visible = false
+    setFrame((current) => current.id === id && !current.visible ? current : { id, visible: false })
+    const update = (next: boolean) => {
+      if (visible === next) return
+      visible = next
+      setFrame({ id, visible: next })
+    }
+    return subscribeOverview((snapshot) => {
+      if (!snapshot) {
+        stopped = 0
+        return
+      }
+      const item = snapshot.instances.find((row) => row.id === id)
+      if (!item) {
+        stopped = 0
+        update(false)
+        return
+      }
+      if (!snapshot.docker.ok || item.runtime === 'unknown') {
+        stopped = 0
+        return
+      }
+      if (item.runtime === 'stopped') {
+        stopped += 1
+        if (stopped >= STOP_CONFIRMATIONS) update(false)
+      } else {
+        stopped = 0
+        update(true)
+      }
+    })
+  }, [id, subscribeOverview])
+  return frame.id === id && frame.visible
+}
 
 export function WorkspacePage() {
   const { id = '' } = useParams()
@@ -57,7 +97,25 @@ export function WorkspacePage() {
   const infoButton = useRef<HTMLButtonElement>(null)
   const ipHistory = useRef<HTMLElement>(null)
   const connected = !!data?.docker.ok && !error
-  const showFrame = !!item && ['running', 'degraded'].includes(item.runtime) && !!data?.docker.ok
+  const showFrame = useWorkspaceFrame(id)
+  const frameTask = tasks.find((task) => task.instance_id === id && ['start', 'restart'].includes(task.kind))
+  const frameTaskId = frameTask?.id
+  const frameTaskState = frameTask?.state
+  const seenFrameTask = useRef<{ instanceId: string; taskId: string; state: string; keptFrame: boolean } | null>(null)
+
+  useEffect(() => {
+    const previous = seenFrameTask.current
+    const keptFrame = previous?.instanceId === id && previous.taskId === frameTaskId
+      ? previous.keptFrame && showFrame
+      : showFrame
+    seenFrameTask.current = frameTaskId && frameTaskState
+      ? { instanceId: id, taskId: frameTaskId, state: frameTaskState, keptFrame }
+      : null
+    if (previous?.instanceId === id && previous.taskId === frameTaskId &&
+        previous.keptFrame && showFrame && previous.state !== 'succeeded' && frameTaskState === 'succeeded') {
+      setReconnect((value) => value + 1)
+    }
+  }, [id, frameTaskId, frameTaskState, showFrame])
 
   useEffect(() => {
     setToolbar(document.getElementById('workspace-toolbar'))
@@ -374,6 +432,11 @@ export function WorkspacePage() {
         />
       </div>
       <DockerNotice />
+      {showFrame && data.docker.ok && (!connected || ['unknown', 'stopped'].includes(item.runtime)) && (
+        <Notice tone="warn" title="正在确认实例状态">
+          已保留现有画面，等待后续检测确认运行状态。
+        </Notice>
+      )}
       <HealthNotice item={item} />
       {task && (
         <Notice title={runState(item, tasks, connected).label}>

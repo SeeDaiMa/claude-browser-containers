@@ -639,7 +639,7 @@ def test_start_closes_before_browser_recreate(monkeypatch):
 
     monkeypatch.setattr(cbc, 'settings', lambda slug: {'trashed_at': None})
     monkeypatch.setattr(cbc, 'active', active)
-    monkeypatch.setattr(cbc, 'browser_would_change', lambda slug, cdp=False: True)
+    monkeypatch.setattr(cbc, 'browser_would_change', lambda slug, cdp=False, is_active=None: True)
     monkeypatch.setattr(cbc, 'close_browser', close)
     monkeypatch.setattr(cbc, 'prepare', lambda *args, **kwargs: calls.append('prepare'))
     monkeypatch.setattr(cbc, 'compose', lambda *args, **kwargs: calls.append(args))
@@ -661,7 +661,7 @@ def test_unchanged_running_browser_is_not_recreated(monkeypatch):
     calls = []
     monkeypatch.setattr(cbc, 'settings', lambda slug: {'trashed_at': None})
     monkeypatch.setattr(cbc, 'active', lambda slug: True)
-    monkeypatch.setattr(cbc, 'browser_would_change', lambda slug, cdp=False: False)
+    monkeypatch.setattr(cbc, 'browser_would_change', lambda slug, cdp=False, is_active=None: False)
     monkeypatch.setattr(cbc, 'close_browser', lambda slug: calls.append('close'))
     monkeypatch.setattr(cbc, 'prepare', lambda *args, **kwargs: calls.append('prepare'))
     monkeypatch.setattr(cbc, 'compose', lambda *args, **kwargs: calls.append(args))
@@ -694,7 +694,7 @@ def test_concurrent_writers_do_not_lose_increments(tmp_path, monkeypatch):
 
     def bump():
         try:
-            with store.exclusive(path):
+            with store.exclusive():
                 current = json.loads(path.read_text())
                 current['n'] += 1
                 store._save(path, current)

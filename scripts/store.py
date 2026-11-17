@@ -21,6 +21,7 @@ PRIVATE = CONFIGS / 'private'
 LIBRARY = PRIVATE / 'library.json'
 EXITS = PRIVATE / 'exits.json'
 BACKUPS = CONFIGS / 'backups'
+INSTANCE_SLUG_PATTERN = r'[a-z][a-z0-9-]{0,31}'
 
 
 class SharedRecordError(ValueError):
@@ -40,7 +41,7 @@ _OPERATION_DEPTH = threading.local()
 @contextmanager
 def instance_operation(slug, blocking=True):
     """同一个实例的检测和生命周期操作互斥；不同实例不占用同一把长操作锁。"""
-    if not isinstance(slug, str) or not re.fullmatch(r'[a-z][a-z0-9-]{0,31}', slug):
+    if not isinstance(slug, str) or not re.fullmatch(INSTANCE_SLUG_PATTERN, slug):
         raise ValueError('实例 ID 无效。')
     with _OPERATIONS_GUARD:
         lock = _OPERATIONS.setdefault(slug, threading.RLock())
@@ -69,7 +70,7 @@ def instance_operation(slug, blocking=True):
 
 
 @contextmanager
-def exclusive(_path=None):
+def exclusive():
     """同一进程的线程和不同进程，共用 configs 的一把锁覆盖完整读—改—写。"""
     depth = getattr(_LOCK_DEPTH, 'depth', 0)
     if depth:
@@ -99,7 +100,7 @@ def _save(path, value):
 
 def _write_private(path, payload):
     path = Path(path)
-    with exclusive(path):
+    with exclusive():
         path.parent.mkdir(parents=True, exist_ok=True)
         path.parent.chmod(0o700)
         temp = path.parent / f'.{path.name}.{os.getpid()}.{threading.get_ident()}.{secrets.token_hex(4)}.tmp'
@@ -127,7 +128,6 @@ def _read(path, default):
     path = Path(path)
     if not path.exists():
         return default
-    path.chmod(0o600)
     return json.loads(path.read_text())
 
 
@@ -269,7 +269,7 @@ def scan_instances():
     for path in sorted(CONFIGS.glob('*/instance.json')):
         slug = path.parent.name
         try:
-            if not re.fullmatch(r'[a-z][a-z0-9-]{0,31}', slug):
+            if not re.fullmatch(INSTANCE_SLUG_PATTERN, slug):
                 raise ValueError('实例目录名无效。')
             data = read_instance(path)
         except (OSError, ValueError) as error:
@@ -314,7 +314,7 @@ def instance_by_id(instance_id):
 def update_instance(slug, mutate):
     """在锁内重新读取 instance.json 再修改，避免覆盖其他线程或进程刚写入的字段。"""
     path = CONFIGS / slug / 'instance.json'
-    with exclusive(path):
+    with exclusive():
         if not path.exists():
             raise ValueError('实例不存在。')
         raw = json.loads(path.read_text())
@@ -358,10 +358,14 @@ def _proxy_path(slug):
     return CONFIGS / slug / 'proxy.json'
 
 
+def _empty_proxy():
+    return {'host': '', 'port': 1080, 'username': '', 'password': '', 'expected_ip': ''}
+
+
 def read_proxy(slug):
     path = _proxy_path(slug)
     if not path.exists():
-        return {'host': '', 'port': 1080, 'username': '', 'password': '', 'expected_ip': ''}
+        return _empty_proxy()
     path.chmod(0o600)
     value = json.loads(path.read_text())
     if not isinstance(value, dict):
@@ -473,6 +477,7 @@ def _save_node_results(subscription_id, results, field):
         if not any(sub['id'] == subscription_id for sub in load_library()['subscriptions']):
             return 0
         nodes = load_cached_nodes(subscription_id)
+        # 前端以此时间戳判断节点缓存版本，同秒内的批次也必须能区分。
         checked_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
         saved = 0
         for node in nodes:
@@ -505,11 +510,21 @@ def _backup(paths):
     return directory
 
 
+def _migrate_read_permissions():
+    paths = [LIBRARY, EXITS, PRIVATE / 'tasks.json', CONFIGS / 'selection.json',
+             CONFIGS / 'subscription.json', CONFIGS / 'nodes.json']
+    paths.extend((PRIVATE / 'nodes').glob('*.json'))
+    for path in paths:
+        if path.exists():
+            path.chmod(0o600)
+
+
 def migrate():
     """登记已有实例和单订阅缓存。先备份原件，不启动、不重启容器。"""
-    with exclusive(LIBRARY):
+    with exclusive():
         PRIVATE.mkdir(parents=True, exist_ok=True)
         PRIVATE.chmod(0o700)
+        _migrate_read_permissions()
         updates = []
         for row in _instances_on_disk():
             raw = dict(row['raw'])
@@ -546,7 +561,7 @@ def migrate():
             return
         url = json.loads(subscription.read_text()).get('url', '')
         if isinstance(url, str) and url.startswith('https://'):
-            subscription_id = 'sub' + hashlib.sha256(url.encode()).hexdigest()[:12]
+            subscription_id = _subscription_id(url)
             raw_nodes = []
             if nodes.exists():
                 loaded = json.loads(nodes.read_text())
@@ -594,10 +609,19 @@ def _attach_legacy_selection(subscription_id):
         _write_selection(selection)
 
 
-def validate_subscription(name, url):
+def _subscription_id(url):
+    return 'sub' + hashlib.sha256(url.encode()).hexdigest()[:12]
+
+
+def validate_subscription_name(name):
     name = name.strip() if isinstance(name, str) else ''
     if not name or len(name) > 40:
         raise ValueError('订阅名称需要 1–40 个字符。')
+    return name
+
+
+def validate_subscription(name, url):
+    name = validate_subscription_name(name)
     url = url.strip() if isinstance(url, str) else ''
     try:
         parsed = urllib.parse.urlsplit(url)
@@ -615,8 +639,8 @@ def add_subscription(name, url, fetcher):
         nodes = fetcher(url)
     except catalog.CatalogError as error:
         raise ValueError(str(error)) from error
-    subscription_id = 'sub' + hashlib.sha256(url.encode()).hexdigest()[:12]
-    with exclusive(LIBRARY):
+    subscription_id = _subscription_id(url)
+    with exclusive():
         library = load_library() if library_exists() else _empty_library()
         existing = next((item for item in library['subscriptions'] if item.get('url') == url), None)
         if existing:
@@ -676,7 +700,7 @@ def replace_subscription_url(subscription_id, url, fetcher, name=None):
         nodes = fetcher(url)
     except catalog.CatalogError as error:
         raise ValueError(str(error)) from error
-    with exclusive(LIBRARY):
+    with exclusive():
         library = load_library()
         target = next((item for item in library['subscriptions'] if item['id'] == subscription_id), None)
         if not target:
@@ -708,10 +732,8 @@ def replace_subscription_url(subscription_id, url, fetcher, name=None):
 
 
 def rename_subscription(subscription_id, name):
-    cleaned = name.strip() if isinstance(name, str) else ''
-    if not cleaned or len(cleaned) > 40:
-        raise ValueError('订阅名称需要 1–40 个字符。')
-    with exclusive(LIBRARY):
+    cleaned = validate_subscription_name(name)
+    with exclusive():
         library = load_library()
         target = next((item for item in library['subscriptions'] if item['id'] == subscription_id), None)
         if not target:
@@ -731,14 +753,14 @@ def refresh_subscription(subscription_id, fetcher):
     try:
         nodes = fetcher(sub['url'])
     except catalog.CatalogError as error:
-        with exclusive(LIBRARY):
+        with exclusive():
             current = load_library()
             target = next((item for item in current['subscriptions'] if item['id'] == subscription_id), None)
             if target:
                 target['last_error'] = '订阅刷新失败，已保留上次的节点缓存。'
                 _save(LIBRARY, current)
         raise ValueError('订阅刷新失败，已保留上次的节点缓存。') from error
-    with exclusive(LIBRARY):
+    with exclusive():
         current = load_library()
         target = next((item for item in current['subscriptions'] if item['id'] == subscription_id), None)
         if not target:
@@ -771,7 +793,7 @@ def _mark_missing_bindings(subscription_id, previous):
 
 
 def delete_subscription(subscription_id):
-    with exclusive(LIBRARY):
+    with exclusive():
         names = {row['slug']: row['display_name'] for row in _instances_on_disk()}
         # 绑定独立于 instance.json 保存，损坏或缺少实例登记也不能绕过删除保护。
         users = [names.get(slug, slug) for slug, record in selection_map().items()
@@ -787,20 +809,20 @@ def delete_subscription(subscription_id):
 
 
 def bind_subscription(slug, subscription_id, node_id):
-    with exclusive(LIBRARY):
+    with exclusive():
         if not any(item['id'] == subscription_id for item in (load_library()['subscriptions'] if library_exists() else [])):
             raise ValueError('订阅不存在，请重新选择。')
         node = materialize_node(subscription_id, node_id)
         selection = selection_map()
         selection[slug] = {'mode': 'global', 'node': node['name'], 'node_id': node_id, 'subscription_id': subscription_id}
         _write_selection(selection)
-        _write_proxy(slug, {'host': '', 'port': 1080, 'username': '', 'password': '', 'expected_ip': ''})
+        _write_proxy(slug, _empty_proxy())
     return node['name']
 
 
 def bind_socks(slug, host, port, username, password):
     port = validate_socks(host, port, username, password)
-    with exclusive(_proxy_path(slug)):
+    with exclusive():
         _write_proxy(slug, {'host': host, 'port': port, 'username': username, 'password': password, 'expected_ip': ''})
         selection = selection_map()
         if slug in selection:
@@ -886,22 +908,29 @@ def exit_record_readable(record):
     return isinstance(history, list) and all(_exit_ips_ok(item) for item in history)
 
 
-def _keep_damaged_copy(path):
-    """留下无法沿用的原文件副本，随后的正常写入不再盖掉它。"""
+def _keep_damaged_copy(path, *, move=False):
+    """保留损坏原件；任务登记需移走，出口记录则复制后继续正常写入。"""
     if not path.exists():
         return
     stamp = datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%SZ')
     damaged = path.with_name(f'{path.name}.{stamp}.damaged')
     if damaged.exists():
         damaged = path.with_name(f'{path.name}.{stamp}.{secrets.token_hex(2)}.damaged')
-    shutil.copy2(path, damaged)
-    damaged.chmod(0o600)
+    if move:
+        path.replace(damaged)
+    else:
+        shutil.copy2(path, damaged)
+    try:
+        damaged.chmod(0o600)
+    except OSError:
+        if not move:
+            raise
 
 
 def save_exit(slug, status, ip, detail, country_code=None):
     if not _exit_ip_ok(ip):
         raise ValueError('出口 IP 无效。')
-    with exclusive(EXITS):
+    with exclusive():
         exits = load_exits()
         previous = exits.get(slug)
         if not isinstance(previous, dict) or not exit_record_readable(previous):
@@ -936,7 +965,7 @@ def save_exit(slug, status, ip, detail, country_code=None):
 
 
 def dismiss_exit_change(slug, change_id):
-    with exclusive(EXITS):
+    with exclusive():
         exits = load_exits()
         record = exits.get(slug) or {}
         if not isinstance(change_id, str) or not change_id or record.get('change_id') != change_id:
@@ -967,7 +996,7 @@ def mark_running(slug, generation):
 
 def reconfirm_same_name(slug):
     """锁定后只允许在原订阅里重新确认同名节点，例如服务商更换了节点密码。"""
-    with exclusive(CONFIGS / 'selection.json'):
+    with exclusive():
         record = selection_map().get(slug)
         if not isinstance(record, dict) or not record.get('subscription_id') or not record.get('node'):
             raise ValueError('这个实例没有绑定订阅节点，不能重新确认。')
@@ -986,7 +1015,7 @@ def reconfirm_same_name(slug):
 
 def forget_instance(slug):
     """彻底删除时清理共享文件里的绑定和出口记录。"""
-    with exclusive(CONFIGS / 'selection.json'):
+    with exclusive():
         selection = selection_map()
         if slug in selection:
             selection.pop(slug)

@@ -44,43 +44,17 @@ cd claude-browser-containers
 
 **下文所有终端命令都在项目根目录执行。** 新开终端后，先 `cd` 进入自己保存的 `claude-browser-containers` 目录。
 
-### 3. 准备运行资源
+### 3. 准备国家数据库
 
-公开仓库不包含已下载的二进制程序、国家数据库或本机浏览器数据。首次安装需要准备以下三项。
-
-**下载 mihomo。** 复制下面整段命令执行；下载、校验或解压失败时会停止这一段：
-
-```bash
-(
-  set -eu
-  curl -fL --proto '=https' --tlsv1.2 \
-    https://github.com/MetaCubeX/mihomo/releases/download/v1.19.34/mihomo-linux-arm64-v1.19.34.gz \
-    -o container/mihomo.gz
-  printf '%s  %s\n' \
-    daaf78a6240a282cdfd75bcbf98fe321f6bd52765cc29e79f344191198f0b50f \
-    container/mihomo.gz | shasum -a 256 -c -
-  gunzip container/mihomo.gz
-  chmod 755 container/mihomo
-)
-```
-
-校验时应显示 `container/mihomo.gz: OK`。该版本来源见 [mihomo 官方发布页](https://github.com/MetaCubeX/mihomo/releases/tag/v1.19.34)。
-
-**编译图片剪贴板辅助程序。** 确认 Docker Desktop 已启动后执行：
-
-```bash
-mkdir -p configs/bin
-docker run --rm --platform linux/arm64 -v "$PWD:/src" -w /src \
-  alpine:3.24 sh -c 'apk add --no-cache gcc musl-dev libx11-dev && gcc -O2 -Wall -Wextra -o configs/bin/cbc-clipboard-image configs/cbc-clipboard-image.c -lX11'
-```
-
-**放置国家数据库。** 自行取得可合法使用的 MaxMind DB 国家数据库，例如 GeoLite2 Country，解压后将 `.mmdb` 文件命名为 `Country.mmdb`，放到：
+公开仓库不包含国家数据库或本机浏览器数据。自行取得可合法使用的 MaxMind DB 国家数据库，例如 GeoLite2 Country，将非空的 `.mmdb` 文件命名为 `Country.mmdb`，放到：
 
 ```text
 backend/resources/Country.mmdb
 ```
 
-文件要求与来源见[数据库说明](backend/resources/README.md)。启动实例时会检查 Claude 出口的国家：必须能确认，并且与这个实例上次成功时的出口国家相同（入口位置不参与判断）。国家无法确认时，实例不能通过启动检查，所以首次使用前应准备好数据库。
+文件要求与来源见[数据库说明](backend/resources/README.md)。数据库由用户手动准备，项目不会自动下载；缺少或为空时，初始化会说明路径并停止。启动实例时仍会检查 Claude 出口国家，入口位置不参与判断。
+
+`init.sh` 自动准备其余资源：下载固定的 Linux ARM64 mihomo v1.19.34，校验原压缩包 SHA-256 `daaf78a6240a282cdfd75bcbf98fe321f6bd52765cc29e79f344191198f0b50f` 和解压后的二进制，再用临时 Alpine 容器编译图片剪贴板辅助程序。已有正确的 mihomo 会跳过下载；下载、校验或编译失败时保留对应旧程序并停止。无需在宿主安装编译器。
 
 ### 4. 初始化并打开管理台
 

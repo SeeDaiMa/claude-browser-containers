@@ -48,7 +48,7 @@ flowchart LR
 
 `scripts/cbc.py` 负责校验、生成 GOST 配置、解析上游地址和调用 Compose；所有 shell 入口复用同一实现。节点密码只在订阅库缓存 `configs/private/nodes/`、运行时 `mihomo.json` 和 mihomo 进程内存里；手动 SOCKS5 密码只在管理台写入的 `proxy.json`、运行时 `gost.json` 和 GOST 内存里。旧的 `configs/subscription.json`、`configs/nodes.json` 已在导入订阅库后删除。它们不出现在环境变量、Docker 参数或源码。配置变化产生非秘密 revision，使 Compose 更新代理服务。
 
-`stop.sh` 移除实例运行容器与网络但保留配置、数据，释放浏览器内存。`restart.sh` 重新建立防火墙及浏览器 namespace。`start.sh` 的相同配置可重复执行。端口冲突或启动失败时，仅回收该实例部分创建的运行资源，保存脱敏启动诊断。配置由进程锁串行管理。
+`stop.sh` 移除实例运行容器与网络但保留配置、数据，释放浏览器内存。`restart.sh` 重新建立防火墙及浏览器 namespace。`start.sh` 的相同配置可重复执行。端口冲突或启动失败时，仅回收该实例部分创建的运行资源，保存脱敏启动诊断。同一实例由操作锁互斥，管理台按实例分队列并发调度；创建任务仍单独串行，端口、子网和配置登记共用全局存储事务。普通生命周期操作使用共享管理锁，初始化、备份和恢复等维护操作使用独占管理锁。
 
 正常模式不启用 CDP，不公开 VNC；Web 文件管理器、终端、音频和通知均关闭。只有 `127.0.0.1:<端口>` 的 Web UI 由宿主转发。文本剪贴板使用 Web 客户端内置的双向同步功能，容器设置 `WEB_HOST_CLIPBOARD_SYNC=1`，工作区显式请求启用同步，并通过 iframe 的 `clipboard-read; clipboard-write` 权限策略交由本机浏览器授权。本机截图不走这段文本协议：noVNC 页面在粘贴时把 PNG 发到同一 Web 端口的 `/cbc-clipboard-image`，容器内的辅助进程只把 `image/png` 放到该实例的 X CLIPBOARD，再由远程 Ctrl+V 交给 Chromium。这个接口不新开宿主端口，有网页登录时仍走原来的认证。
 

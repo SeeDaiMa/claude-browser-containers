@@ -74,7 +74,7 @@ def test_close_timeout_fails_without_stopping_and_lets_the_next_instance_run(iso
     worker.start()
     worker.join(3)
     assert not worker.is_alive()
-    assert seen == ['cbc-ifixture-browser', 'cbc-iother-browser']
+    assert sorted(seen) == ['cbc-ifixture-browser', 'cbc-iother-browser']
     assert core.get_task(first['id'])['state'] == 'failed'
     assert '无法正常关闭' in core.get_task(first['id'])['error']
     assert core.get_task(second['id'])['state'] == 'failed'

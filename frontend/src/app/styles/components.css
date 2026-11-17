@@ -742,6 +742,11 @@ body {
     box-shadow: var(--shadow-sm);
 }
 
+.node-pagination {
+    padding: 12px var(--space-3);
+    border-bottom: 1px solid var(--border);
+}
+
 .cm-table {
     width: 100%;
     border-collapse: collapse;

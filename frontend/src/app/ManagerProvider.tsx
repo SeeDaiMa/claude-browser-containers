@@ -66,6 +66,7 @@ function savedTheme(): Theme {
 }
 
 type TaskOptions = { allowRecovery?: boolean }
+type OverviewListener = (snapshot: Overview | null) => void
 type ManagerState = {
   data: Overview | null
   tasks: Task[]
@@ -73,6 +74,7 @@ type ManagerState = {
   error: string
   refreshing: boolean
   refresh: () => Promise<void>
+  subscribeOverview: (listener: OverviewListener) => () => void
   dismissExitChange: (id: string, changeId: string) => Promise<void>
   submitTask: (key: string, request: () => Promise<Task>, options?: TaskOptions) => Promise<Task>
   isBusy: (id: string, options?: TaskOptions) => boolean
@@ -97,6 +99,8 @@ export function ManagerProvider({ children }: { children: ReactNode }) {
   const [pending, setPending] = useState<string[]>([])
   const locks = useRef(new Set<string>())
   const polling = useRef(false)
+  const latestOverview = useRef<Overview | null>(null)
+  const overviewListeners = useRef(new Set<OverviewListener>())
   const hasActiveTasks = useRef(false)
   const seen = useRef(new Map<string, string>())
   const healthSeen = useRef(new Map<string, { state: string; changeId?: string }>())
@@ -109,6 +113,12 @@ export function ManagerProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([])
   const [draft, setDraft] = useState<CreateDraft>(newDraft)
   const resolvedTheme = theme === 'auto' ? (systemDark ? 'dark' : 'light') : theme
+
+  const subscribeOverview = useCallback((listener: OverviewListener) => {
+    overviewListeners.current.add(listener)
+    listener(latestOverview.current)
+    return () => { overviewListeners.current.delete(listener) }
+  }, [])
 
   const notify = useCallback((title: string, tone: Tone = 'info', detail = '') => {
     const notice = {
@@ -139,6 +149,9 @@ export function ManagerProvider({ children }: { children: ReactNode }) {
           ),
         }
         setData((current) => keepIfSame(current, latest))
+        // 每次实际观测都通知工作区；内容相同时仍沿用 data，避免全局重渲染。
+        latestOverview.current = latest
+        overviewListeners.current.forEach((listener) => listener(latest))
         for (const item of latest.instances) {
           const state = item.monitor?.state || ''
           const previous = healthSeen.current.get(item.id)
@@ -156,6 +169,9 @@ export function ManagerProvider({ children }: { children: ReactNode }) {
           }
           healthSeen.current.set(item.id, { state, changeId: item.exit?.change_id })
         }
+      } else {
+        latestOverview.current = null
+        overviewListeners.current.forEach((listener) => listener(null))
       }
       if (subscriptionList.status === 'fulfilled') {
         const incoming = subscriptionList.value.subscriptions
@@ -296,6 +312,7 @@ export function ManagerProvider({ children }: { children: ReactNode }) {
         error,
         refreshing,
         refresh,
+        subscribeOverview,
         dismissExitChange,
         submitTask,
         isBusy: (id, options = {}) =>

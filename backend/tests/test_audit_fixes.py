@@ -106,13 +106,21 @@ def test_late_start_failure_cleans_up_started_components(workspace, monkeypatch,
     monkeypatch.setattr(cbc, 'compose', compose)
     monkeypatch.setattr(cbc, 'close_browser', close)
     monkeypatch.setattr(cbc, 'down', down)
-    monkeypatch.setattr(cbc, 'docker', lambda *a, **kw: events.append('disconnect-proxy'))
+    def docker(*args, **kwargs):
+        if args[0] == 'logs':
+            events.append('logs-' + args[-1].rsplit('-', 1)[-1])
+            return SimpleNamespace(stdout='fixture log', stderr='')
+        assert args[0] == 'stop'
+        events.append('disconnect-proxy')
+
+    monkeypatch.setattr(cbc, 'docker', docker)
     with pytest.raises(type(error), match=str(error)):
         core._dispatch(task('start'))
     assert not running
     assert events[-2:] == ['close', 'down']
+    assert events[:3] == ['logs-guard', 'logs-proxy', 'logs-browser']
     if isinstance(error, cbc.SandboxError):
-        assert events[0] == 'disconnect-proxy'
+        assert events[3] == 'disconnect-proxy'
     assert store.instance_by_id('ifixture')['raw']['desired_running'] is False
     assert (workspace / 'data/ifixture/profile-marker').read_text() == 'preserved'
 
@@ -129,13 +137,13 @@ def test_failed_cleanup_keeps_close_confirmation_protection(workspace, monkeypat
     monkeypatch.setattr(cbc, 'wait_until_ready', Mock(side_effect=error))
     monkeypatch.setattr(cbc, 'close_browser', Mock(side_effect=RuntimeError('请处理关闭确认')))
     monkeypatch.setattr(cbc, 'down', Mock())
-    monkeypatch.setattr(cbc, 'docker', lambda *a, **kw: events.append(a))
+    monkeypatch.setattr(cbc, 'docker', lambda *a, **kw: events.append(a) or SimpleNamespace(stdout='fixture', stderr=''))
     with pytest.raises(RuntimeError, match='启动收尾未完成.*关闭确认'):
         core._boot(task('start'), 'ifixture', verify=False)
     cbc.down.assert_not_called()
-    assert bool(events) is sandbox
+    assert [event[0] for event in events] == ['logs', 'logs', 'logs'] + (['stop'] if sandbox else [])
     if sandbox:
-        assert events[0][0] == 'stop' and events[0][-1].endswith('-proxy')
+        assert events[3][-1].endswith('-proxy')
     assert (workspace / 'data/ifixture/profile-marker').exists()
 
 
@@ -383,3 +391,94 @@ def test_invalid_subscription_is_rejected_before_task_acceptance(workspace, monk
     assert response.status_code == 400
     assert 'HTTPS' in response.json()['error']
     assert not core._TASKS and core._SUBSCRIPTION_QUEUE.empty()
+
+
+@pytest.mark.parametrize('entry', ['web', 'cli'])
+def test_start_failure_saves_redacted_diagnostics_before_cleanup(workspace, monkeypatch, entry):
+    instance(workspace)
+    password, token = 'fixture-socks-password', 'fixture-mihomo-token'
+    store._write_proxy('ifixture', {'host': '192.0.2.9', 'port': 1080, 'username': 'fixture-user', 'password': password})
+    runtime = store.CONFIGS / 'ifixture' / 'runtime'
+    store._save(runtime / 'mihomo.json', {'proxies': [{'password': token}]})
+    path = runtime / 'start-failure.log'
+    roles = []
+    monkeypatch.setattr(core, '_require_docker', lambda: None)
+    monkeypatch.setattr(cbc, 'active', lambda _: False)
+    monkeypatch.setattr(cbc, 'prepare', lambda *a, **kw: True)
+    monkeypatch.setattr(cbc, 'compose', Mock())
+    monkeypatch.setattr(cbc, 'verify_exit', Mock(side_effect=RuntimeError('fixture boot failure')))
+
+    def docker(*args, **kwargs):
+        assert args[:3] == ('logs', '--tail', '80')
+        assert kwargs['timeout'] == 15 and kwargs['check'] is False
+        roles.append(args[3])
+        return SimpleNamespace(stdout=f'fixture-user:{password}', stderr=f' {token} diagnostic')
+
+    def cleanup(*_args):
+        text = path.read_text()
+        assert password not in text and token not in text
+        assert '[REDACTED]' in text and 'diagnostic' in text
+        assert path.stat().st_mode & 0o777 == 0o600
+
+    monkeypatch.setattr(cbc, 'docker', docker)
+    cleaning = Mock(side_effect=cleanup)
+    monkeypatch.setattr(cbc, 'cleanup_start_failure', cleaning)
+    with pytest.raises(RuntimeError, match='fixture boot failure'):
+        if entry == 'web':
+            core._boot(task('start'), 'ifixture', verify=True)
+        else:
+            cbc.start('ifixture')
+    assert roles == [cbc.container('ifixture', role) for role in ('guard', 'proxy', 'browser')]
+    cleaning.assert_called_once()
+
+
+@pytest.mark.parametrize('entry', ['web', 'cli'])
+@pytest.mark.parametrize('failure', ['logs', 'write'])
+def test_diagnostic_failures_do_not_skip_start_cleanup(workspace, monkeypatch, entry, failure):
+    instance(workspace)
+    runtime = store.CONFIGS / 'ifixture' / 'runtime'
+    runtime.mkdir()
+    if failure == 'write':
+        (runtime / 'start-failure.log').mkdir()
+    monkeypatch.setattr(core, '_require_docker', lambda: None)
+    monkeypatch.setattr(cbc, 'active', lambda _: False)
+    monkeypatch.setattr(cbc, 'prepare', lambda *a, **kw: True)
+    monkeypatch.setattr(cbc, 'compose', Mock())
+    monkeypatch.setattr(cbc, 'verify_exit', Mock(side_effect=RuntimeError('original boot failure')))
+    monkeypatch.setattr(cbc, 'docker', Mock(side_effect=OSError('log read unavailable')) if failure == 'logs'
+                        else Mock(return_value=SimpleNamespace(stdout='fixture log', stderr='')))
+    cleanup = Mock()
+    monkeypatch.setattr(cbc, 'cleanup_start_failure', cleanup)
+    with pytest.raises(RuntimeError, match='original boot failure'):
+        if entry == 'web':
+            core._boot(task('start'), 'ifixture', verify=True)
+        else:
+            cbc.start('ifixture')
+    cleanup.assert_called_once()
+
+
+@pytest.mark.parametrize('running,changed', [(False, False), (True, False), (True, True)])
+def test_boot_reuses_one_browser_state_query(workspace, monkeypatch, running, changed):
+    instance(workspace)
+    commands = []
+    identity = {'image': 'fixture-image', 'revision': 'before'}
+    monkeypatch.setattr(core, '_require_docker', lambda: None)
+    monkeypatch.setattr(cbc, 'running_browser_identity', lambda _: identity)
+    monkeypatch.setattr(cbc, 'planned_browser', lambda *a, **kw: {**identity, 'revision': 'after' if changed else 'before'})
+    monkeypatch.setattr(cbc, 'prepare', lambda *a, **kw: None)
+    compose = Mock()
+    monkeypatch.setattr(cbc, 'compose', compose)
+    close = Mock()
+    monkeypatch.setattr(cbc, 'close_browser', close)
+    monkeypatch.setattr(cbc, 'wait_until_ready', lambda _: None)
+
+    def docker(*args, **kwargs):
+        assert args[0] == 'ps'
+        commands.append(args)
+        return SimpleNamespace(stdout='running' if running else '')
+
+    monkeypatch.setattr(cbc, 'docker', docker)
+    core._boot(task('start'), 'ifixture', verify=False)
+    assert len(commands) == 1
+    assert close.call_count == int(running and changed)
+    assert any('browser' in call.args for call in compose.call_args_list) == (not running or changed)
