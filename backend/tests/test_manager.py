@@ -178,7 +178,7 @@ def test_exit_observation_rejects_invalid_claude_ip(monkeypatch):
 def test_exit_observation_ignores_invalid_country(monkeypatch):
     monkeypatch.setattr(cbc, 'addresses', lambda name: {'BRIDGE_IP': '10.231.1.3'})
     for code in ('XX', 'ZZ', '12', 'not-a-country', '中国'):
-        monkeypatch.setattr(cbc, 'docker', lambda *args, **kwargs: SimpleNamespace(
+        monkeypatch.setattr(cbc, 'docker', lambda *args, code=code, **kwargs: SimpleNamespace(
             returncode=0, stdout=f'ip=198.51.100.20\nloc={code}\n'))
         assert cbc.observe_exit_info('fixture') == {'ip': '198.51.100.20', 'country_code': None}
 
@@ -575,7 +575,7 @@ def test_rename_during_trash_is_not_lost(tmp_path, monkeypatch):
 
 def test_purge_forgets_selection_and_exit(tmp_path, monkeypatch):
     _redirect(tmp_path, monkeypatch)
-    row = _instance(tmp_path, trashed_at='2026-11-14T00:00:00+00:00')
+    _instance(tmp_path, trashed_at='2026-11-14T00:00:00+00:00')
     store._write_selection({'idemo': {'node': 'alpha'}, 'other': {'node': 'beta'}})
     store.save_exit('idemo', 'ok', '192.0.2.1', '')
     store.save_exit('other', 'ok', '192.0.2.2', '')

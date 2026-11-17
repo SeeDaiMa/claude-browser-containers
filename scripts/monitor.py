@@ -162,7 +162,7 @@ def tick():
                 recovery = row['raw'].get('recovery') or {}
                 should_recover = state['component_failures'] >= 3 or state['probe_failures'] >= 2
                 if should_recover and recovery.get('attempts', 0) >= MAX_ATTEMPTS and not recovery.get('exhausted'):
-                    def exhaust(raw):
+                    def exhaust(raw, row=row, recovery=recovery):
                         if raw.get('run_generation') == row['raw'].get('run_generation') and raw.get('desired_running'):
                             raw['recovery'] = {**recovery, 'exhausted': True, 'next_retry_at': None,
                                                'detail': '自动恢复已达 3 次上限，请检查原节点后手动启动。'}

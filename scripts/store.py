@@ -730,14 +730,14 @@ def refresh_subscription(subscription_id, fetcher):
     previous = load_cached_nodes(subscription_id)
     try:
         nodes = fetcher(sub['url'])
-    except catalog.CatalogError:
+    except catalog.CatalogError as error:
         with exclusive(LIBRARY):
             current = load_library()
             target = next((item for item in current['subscriptions'] if item['id'] == subscription_id), None)
             if target:
                 target['last_error'] = '订阅刷新失败，已保留上次的节点缓存。'
                 _save(LIBRARY, current)
-        raise ValueError('订阅刷新失败，已保留上次的节点缓存。')
+        raise ValueError('订阅刷新失败，已保留上次的节点缓存。') from error
     with exclusive(LIBRARY):
         current = load_library()
         target = next((item for item in current['subscriptions'] if item['id'] == subscription_id), None)
@@ -755,7 +755,7 @@ def _mark_missing_bindings(subscription_id, previous):
     current = {item['id']: item for item in load_cached_nodes(subscription_id)}
     selection = selection_map()
     changed = False
-    for slug, record in list(selection.items()):
+    for _slug, record in list(selection.items()):
         if not isinstance(record, dict) or record.get('subscription_id') != subscription_id:
             continue
         node = current.get(record.get('node_id'))

@@ -7,7 +7,6 @@ from unittest.mock import Mock
 
 import pytest
 
-import catalog
 import cbc
 import manager_core as core
 import monitor

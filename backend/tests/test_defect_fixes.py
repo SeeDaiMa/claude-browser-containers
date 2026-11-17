@@ -24,7 +24,7 @@ import manager_core as core
 import monitor
 import store
 from app.main import RequestBodyError
-from test_reliability import instance, isolated, snapshot, task
+from test_reliability import instance, isolated as isolated, snapshot, task
 
 
 def _node(name='audit-node'):

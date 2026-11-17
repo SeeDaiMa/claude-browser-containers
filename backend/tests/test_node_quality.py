@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from test_node_latency import client, library
+from test_node_latency import client as client, library as library
 import manager_core as core
 import node_probe
 import node_probe_worker as worker
@@ -151,6 +151,7 @@ def test_docker_credentials_stay_on_stdin_and_results_are_whitelisted(library, m
     assert result[identity]['fraud_score'] == 0
     assert 'private-secret' not in json.dumps(result)
     arguments, options = calls[0]
+    assert 'fixture-network-image' in arguments
     assert 'fixture-secret' not in str(arguments)
     request = json.loads(options['input'])
     assert request['mode'] == 'quality' and request['nodes'][0]['config']['password'] == 'fixture-secret-one'

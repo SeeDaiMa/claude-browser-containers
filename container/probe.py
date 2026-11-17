@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Small network/CDP probes; runs in the guard's Chromium network namespace."""
 import base64
-import hashlib
 import json
 import os
 import socket
@@ -29,9 +28,9 @@ class CDP:
                 targets = json.load(opener.open('http://127.0.0.1:9222/json', timeout=3))
                 page = next(t for t in targets if t['type'] == 'page' and (not target or t['id'] == target))
                 break
-            except (OSError, StopIteration):
+            except (OSError, StopIteration) as error:
                 if time.monotonic() >= deadline:
-                    raise RuntimeError('CDP not ready; start with --cdp for acceptance only')
+                    raise RuntimeError('CDP not ready; start with --cdp for acceptance only') from error
                 time.sleep(0.25)
         path = page['webSocketDebuggerUrl'].split(':9222', 1)[1]
         self.sock = socket.create_connection(('127.0.0.1', 9222), 3)

@@ -15,7 +15,7 @@ import catalog
 import cbc
 import manager_core as core
 import store
-from test_reliability import isolated, instance, task
+from test_reliability import isolated as isolated, instance, task
 
 
 @pytest.fixture
