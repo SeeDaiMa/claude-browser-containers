@@ -118,7 +118,7 @@ def test_exit_probe_keeps_unreadable_record_and_can_be_repeated(isolated, monkey
     store._save(store.EXITS, {'ifixture': original})
     before = store.EXITS.read_text()
     monkeypatch.setattr(core, 'runtime_snapshot', lambda force=False: snapshot())
-    monkeypatch.setattr(core, 'probe_proxy', lambda _slug: {
+    monkeypatch.setattr(cbc, 'probe_proxy', lambda _slug: {
         'status': 'ok', 'ip': '192.0.2.9', 'detail': '', 'country_code': 'AU',
     })
     monkeypatch.setattr(monitor, '_state', lambda _row: {
@@ -224,7 +224,7 @@ def test_corrupt_exit_ip_is_kept_aside_when_observation_is_saved(isolated, monke
     listed = core.list_instances()
     assert listed['instances'][0]['exit'] is None
     monkeypatch.setattr(core, 'runtime_snapshot', lambda force=False: snapshot())
-    monkeypatch.setattr(core, 'probe_proxy', lambda _slug: {
+    monkeypatch.setattr(cbc, 'probe_proxy', lambda _slug: {
         'status': 'ok', 'ip': '192.0.2.9', 'detail': '', 'country_code': 'AU',
     })
     monkeypatch.setattr(monitor, '_state', lambda _row: {
@@ -410,17 +410,17 @@ def test_exit_country_must_match_last_successful_exit(isolated, monkeypatch):
     monkeypatch.setattr(cbc, 'docker', lambda *args, **kwargs: stops.append(args) or SimpleNamespace(returncode=0))
 
     # 从未成功过：只要求出口国家可以确认。
-    core._require_same_country('ifixture', {'status': 'ok', 'country_code': 'JP', 'ip': '203.0.113.8'})
+    cbc.require_same_country('ifixture', {'status': 'ok', 'country_code': 'JP', 'ip': '203.0.113.8'})
     assert stops == []
 
     # 有历史出口后，同国放行，不同国拒绝。
     store.save_exit('ifixture', 'ok', '203.0.113.8', '', 'JP')
-    core._require_same_country('ifixture', {'status': 'ok', 'country_code': 'jp', 'ip': '203.0.113.9'})
+    cbc.require_same_country('ifixture', {'status': 'ok', 'country_code': 'jp', 'ip': '203.0.113.9'})
     assert stops == []
     with pytest.raises(cbc.CountryPolicyError, match=r'国家（US）与上次成功时（JP）不同'):
-        core._require_same_country('ifixture', {'status': 'ok', 'country_code': 'US', 'ip': '203.0.113.10'})
+        cbc.require_same_country('ifixture', {'status': 'ok', 'country_code': 'US', 'ip': '203.0.113.10'})
     with pytest.raises(cbc.CountryPolicyError, match='出口国家无法确认'):
-        core._require_same_country('ifixture', {'status': 'unknown', 'country_code': None, 'ip': None})
+        cbc.require_same_country('ifixture', {'status': 'unknown', 'country_code': None, 'ip': None})
     assert all(args == ('stop', '--time', '5', 'cbc-ifixture-proxy') for args in stops)
     assert len(stops) == 2
 
@@ -437,12 +437,12 @@ def test_exit_baseline_falls_back_to_local_lookup_and_rejects_unreadable_records
                                            'last_success': {'ip': '203.0.113.5', 'country_code': None,
                                                             'checked_at': '2026-11-16T00:00:00Z'}}})
     assert cbc.baseline_exit_country('ifixture') == ('GB', True)
-    core._require_same_country('ifixture', {'status': 'ok', 'country_code': 'GB', 'ip': '203.0.113.6'})
+    cbc.require_same_country('ifixture', {'status': 'ok', 'country_code': 'GB', 'ip': '203.0.113.6'})
     # 记录损坏时无法确认是否一致，必须拒绝且保留原文件。
     store.EXITS.write_text('{invalid')
     assert cbc.baseline_exit_country('ifixture') == (None, False)
     with pytest.raises(cbc.CountryPolicyError, match='出口记录无法读取'):
-        core._require_same_country('ifixture', {'status': 'ok', 'country_code': 'GB', 'ip': '203.0.113.6'})
+        cbc.require_same_country('ifixture', {'status': 'ok', 'country_code': 'GB', 'ip': '203.0.113.6'})
     assert store.EXITS.read_text() == '{invalid'
 
 

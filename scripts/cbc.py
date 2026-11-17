@@ -396,50 +396,20 @@ def start(name, cdp=False):
     try:
         if configured:
             compose(name, 'up', '-d', '--wait', '--wait-timeout', '90', 'guard', 'proxy', capture=False)
-            observed = observe_exit_info(name)
-            import geolocation
-            observed['country_code'] = geolocation.country_code(observed.get('ip')) or observed.get('country_code')
-            require_same_country(name, {'status': 'ok' if observed.get('ip') else 'unknown', **observed})
+            verify_exit(name)
             compose(name, 'up', '-d', '--wait', '--wait-timeout', '90', 'browser', capture=False)
         else:
             compose(name, 'up', '-d', '--wait', '--wait-timeout', '90', capture=False)
-        deadline = time.monotonic() + 60
-        url = f"http://127.0.0.1:{settings(name)['port']}"
-        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-        while True:
-            try:
-                if opener.open(url, timeout=2).status == 200:
-                    break
-            except OSError:
-                pass
-            if time.monotonic() >= deadline:
-                raise RuntimeError(f'{name} Web UI 在 60 秒内未就绪。')
-            time.sleep(1)
+        wait_until_ready(name)
         if configured:
             detail = f'全局节点“{selected_label(name) or "手动 SOCKS5"}”'
         else:
             detail = '离线保护中，尚未选择节点'
+        url = f"http://127.0.0.1:{settings(name)['port']}"
         print(f'{name} 已启动：{url}，{detail}。请运行 check-proxy.sh 验证出口。')
-        deadline = time.monotonic() + 30
-        while True:
-            try:
-                processes = docker('exec', container(name, 'browser'), 'ps', '-eo', 'args', timeout=5).stdout.splitlines()
-            except subprocess.TimeoutExpired:
-                processes = []
-            chromium = [p for p in processes if p.startswith('/usr/lib/chromium/chromium ')]
-            if any('--no-sandbox' in p for p in chromium):
-                raise SandboxError('检测到 Chromium 关闭 Sandbox，拒绝继续。')
-            if chromium and any('--type=renderer' in p for p in chromium):
-                break
-            if time.monotonic() >= deadline:
-                raise RuntimeError('Chromium 进程没有在 30 秒内就绪。')
-            time.sleep(0.5)
         if configured:
             store.lock_proxy(name)
-            def mark_running(raw):
-                if raw.get('run_generation') == generation:
-                    raw['desired_running'] = True
-            store.update_instance(name, mark_running)
+            store.mark_running(name, generation)
     except Exception as error:
         secrets = catalog.secret_values(read_json(CONFIGS / name / 'proxy.json'))
         mihomo_file = CONFIGS / name / 'runtime/mihomo.json'
@@ -585,6 +555,73 @@ def require_same_country(name, observation):
         # 网络拒绝优先；损坏记录不能掩盖拒绝原因，也不能被空记录覆盖。
         pass
     raise CountryPolicyError(detail)
+
+
+def probe_proxy(name):
+    """先确认本实例代理能访问公网，再读取 Claude 看到的出口 IP 和国家。"""
+    import geolocation
+    address = addresses(name)
+    proxy = f"http://{address['BRIDGE_IP']}:8080"
+    try:
+        page = docker(
+            'exec', container(name, 'guard'), 'curl', '-fsS', '--max-time', '15', '--noproxy', '',
+            '--proxy', proxy, 'https://example.com', '-o', '/dev/null', check=False, timeout=20,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return {'status': 'failed', 'ip': None, 'detail': '代理连接失败'}
+    if page.returncode != 0:
+        return {'status': 'failed', 'ip': None, 'detail': '代理连接失败'}
+    observed = observe_exit_info(name)
+    if observed['ip']:
+        country = geolocation.country_code(observed['ip']) or observed.get('country_code')
+        return {'status': 'ok', **observed, 'country_code': country, 'detail': ''}
+    return {'status': 'unknown', 'ip': None, 'detail': 'Claude 出口未测得'}
+
+
+def verify_exit(name):
+    """网页启动、命令行启动和自动恢复共用的出口检查，通过后记录这次出口。
+
+    出口国家不符合要求时，require_same_country 会断开本实例代理并抛出 CountryPolicyError。
+    """
+    import store
+    observation = probe_proxy(name)
+    require_same_country(name, observation)
+    store.save_exit(name, observation['status'], observation['ip'], observation['detail'],
+                    observation.get('country_code'))
+    if observation['status'] == 'failed':
+        raise RuntimeError('代理连接失败。实例配置已保留，可以修改代理后再启动。')
+    return observation
+
+
+def wait_until_ready(name):
+    """等待 Web UI 可以打开、Chromium 已开始渲染；发现关闭 Sandbox 立即拒绝。"""
+    deadline = time.monotonic() + 60
+    url = f"http://127.0.0.1:{settings(name)['port']}"
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    while True:
+        try:
+            if opener.open(url, timeout=2).status == 200:
+                break
+        except OSError:
+            pass
+        if time.monotonic() >= deadline:
+            raise RuntimeError('Web UI 在 60 秒内未就绪。')
+        time.sleep(1)
+    deadline = time.monotonic() + 30
+    while True:
+        try:
+            processes = docker('exec', container(name, 'browser'), 'ps', '-eo', 'args',
+                               check=False, timeout=5).stdout.splitlines()
+        except subprocess.TimeoutExpired:
+            processes = []
+        chromium = [line for line in processes if line.startswith('/usr/lib/chromium/chromium ')]
+        if any('--no-sandbox' in line for line in chromium):
+            raise SandboxError('检测到 Chromium 关闭 Sandbox，拒绝继续运行。')
+        if chromium and any('--type=renderer' in line for line in chromium):
+            return
+        if time.monotonic() >= deadline:
+            raise RuntimeError('Chromium 没有在 30 秒内就绪。')
+        time.sleep(0.5)
 
 
 def check_proxy(name):

@@ -8,7 +8,6 @@ import re
 import subprocess
 import threading
 import time
-import urllib.request
 
 import cbc
 import catalog
@@ -424,7 +423,7 @@ def _dispatch_locked(task):
         _preflight_boot(row['slug'])
         generation = store.set_run_intent(row['slug'], False)
         _boot(task, row['slug'], verify=True)
-        _complete_start(row['slug'], generation)
+        store.mark_running(row['slug'], generation)
     elif kind == 'restart':
         row = store.instance_by_id(task['instance_id'])
         _preflight_boot(row['slug'])
@@ -432,7 +431,7 @@ def _dispatch_locked(task):
         _advance(task, '停止实例')
         _stop_running(row['slug'])
         _boot(task, row['slug'], verify=True)
-        _complete_start(row['slug'], generation)
+        store.mark_running(row['slug'], generation)
     elif kind == 'stop':
         _stop_task(task, store.instance_by_id(task['instance_id'])['slug'])
     elif kind == 'trash':
@@ -516,7 +515,7 @@ def _create(task, payload):
             generation = store.set_run_intent(slug, False)
         try:
             _boot(task, slug, verify=True)
-            _complete_start(slug, generation)
+            store.mark_running(slug, generation)
         finally:
             invalidate_runtime()
     task['result'] = {'instance_id': slug}
@@ -538,14 +537,6 @@ def _validate_binding(payload, resolve=False):
         raise ValueError('创建实例时必须选择订阅节点或填写 SOCKS5。')
 
 
-def _require_same_country(slug, observation):
-    """启动和自动恢复只看 Claude 出口：国家须可确认，且与该实例上次成功时一致，否则停止联网。
-
-    入口位置不参与判断；不使用节点名称里的国家。
-    """
-    return cbc.require_same_country(slug, observation)
-
-
 def _preflight_boot(slug):
     raw = cbc.settings(slug)
     if raw.get('deleting'):
@@ -556,13 +547,6 @@ def _preflight_boot(slug):
     if not cbc.proxy_plan(slug, store.read_proxy(slug)):
         raise ValueError('请先配置代理，再启动实例。')
     cbc.planned_browser(slug, cdp=False)
-
-
-def _complete_start(slug, generation):
-    def complete(raw):
-        if raw.get('run_generation') == generation:
-            raw['desired_running'] = True
-    store.update_instance(slug, complete)
 
 
 def _write_binding(slug, payload):
@@ -615,63 +599,14 @@ def _boot_components(task, slug, verify, recreate_browser):
     cbc.compose(slug, 'up', '-d', '--wait', '--wait-timeout', '90', 'guard', 'proxy', capture=True)
     if verify:
         _advance(task, '验证代理连接')
-        probed = probe_proxy(slug)
-        _require_same_country(slug, probed)
-        store.save_exit(slug, probed['status'], probed['ip'], probed['detail'], probed.get('country_code'))
-        if probed['status'] == 'failed':
-            raise RuntimeError('代理连接失败。实例配置已保留，可以修改代理后再启动。')
+        cbc.verify_exit(slug)
     _advance(task, '启动 Chromium')
     if recreate_browser or not cbc.active(slug):
         cbc.compose(slug, 'up', '-d', '--wait', '--wait-timeout', '90', 'browser', capture=True)
     _advance(task, '等待 Web UI')
-    _wait_ui(slug)
+    cbc.wait_until_ready(slug)
     # 第一次启动成功后锁定代理，之后不能再更换节点或 SOCKS5。
     store.lock_proxy(slug)
-
-
-def _wait_ui(slug):
-    deadline = time.monotonic() + 60
-    url = f"http://127.0.0.1:{cbc.settings(slug)['port']}"
-    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-    while True:
-        try:
-            if opener.open(url, timeout=2).status == 200:
-                break
-        except OSError:
-            pass
-        if time.monotonic() >= deadline:
-            raise RuntimeError('Web UI 在 60 秒内未就绪。')
-        time.sleep(1)
-    deadline = time.monotonic() + 30
-    while True:
-        try:
-            processes = cbc.docker('exec', cbc.container(slug, 'browser'), 'ps', '-eo', 'args', check=False, timeout=5).stdout.splitlines()
-        except subprocess.TimeoutExpired:
-            processes = []
-        chromium = [line for line in processes if line.startswith('/usr/lib/chromium/chromium ')]
-        if any('--no-sandbox' in line for line in chromium):
-            raise cbc.SandboxError('检测到 Chromium 关闭 Sandbox，拒绝继续运行。')
-        if chromium and any('--type=renderer' in line for line in chromium):
-            return
-        if time.monotonic() >= deadline:
-            raise RuntimeError('Chromium 没有在 30 秒内就绪。')
-        time.sleep(0.5)
-
-
-def probe_proxy(slug):
-    address = cbc.addresses(slug)
-    proxy = f"http://{address['BRIDGE_IP']}:8080"
-    try:
-        page = cbc.docker('exec', cbc.container(slug, 'guard'), 'curl', '-fsS', '--max-time', '15', '--noproxy', '', '--proxy', proxy, 'https://example.com', '-o', '/dev/null', check=False, timeout=20)
-    except (OSError, subprocess.TimeoutExpired):
-        return {'status': 'failed', 'ip': None, 'detail': '代理连接失败'}
-    if page.returncode != 0:
-        return {'status': 'failed', 'ip': None, 'detail': '代理连接失败'}
-    observed = cbc.observe_exit_info(slug)
-    if observed['ip']:
-        country = geolocation.country_code(observed['ip']) or observed.get('country_code')
-        return {'status': 'ok', **observed, 'country_code': country, 'detail': ''}
-    return {'status': 'unknown', 'ip': None, 'detail': 'Claude 出口未测得'}
 
 
 def _stop_running(slug, task=None):
@@ -1130,7 +1065,7 @@ def check_exit(instance_id):
         row = store.instance_by_id(instance_id)
         if row['trashed_at'] or _runtime_state(row['slug'], container_map()) != 'running':
             raise ValueError('实例没有在运行，不能检测出口。')
-        probed = probe_proxy(row['slug'])
+        probed = cbc.probe_proxy(row['slug'])
         return store.save_exit(row['slug'], probed['status'], probed['ip'], probed['detail'], probed.get('country_code'))
 
 

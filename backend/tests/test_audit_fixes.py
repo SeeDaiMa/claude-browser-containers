@@ -88,9 +88,9 @@ def test_late_start_failure_cleans_up_started_components(workspace, monkeypatch,
     monkeypatch.setattr(core, '_require_docker', lambda: None)
     monkeypatch.setattr(cbc, 'active', lambda _: 'browser' in running)
     monkeypatch.setattr(cbc, 'prepare', lambda *a, **kw: True)
-    monkeypatch.setattr(core, 'probe_proxy', lambda _: {'status': 'ok', 'ip': '1.1.1.1', 'detail': ''})
-    monkeypatch.setattr(core, '_require_same_country', lambda *_args: None)
-    monkeypatch.setattr(core, '_wait_ui', Mock(side_effect=error))
+    monkeypatch.setattr(cbc, 'probe_proxy', lambda _: {'status': 'ok', 'ip': '1.1.1.1', 'detail': ''})
+    monkeypatch.setattr(cbc, 'require_same_country', lambda *_args: None)
+    monkeypatch.setattr(cbc, 'wait_until_ready', Mock(side_effect=error))
 
     def compose(slug, *args, **kwargs):
         running.update(role for role in ('guard', 'proxy', 'browser') if role in args)
@@ -126,7 +126,7 @@ def test_failed_cleanup_keeps_close_confirmation_protection(workspace, monkeypat
     monkeypatch.setattr(cbc, 'active', lambda _: False)
     monkeypatch.setattr(cbc, 'prepare', lambda *a, **kw: True)
     monkeypatch.setattr(cbc, 'compose', Mock())
-    monkeypatch.setattr(core, '_wait_ui', Mock(side_effect=error))
+    monkeypatch.setattr(cbc, 'wait_until_ready', Mock(side_effect=error))
     monkeypatch.setattr(cbc, 'close_browser', Mock(side_effect=RuntimeError('请处理关闭确认')))
     monkeypatch.setattr(cbc, 'down', Mock())
     monkeypatch.setattr(cbc, 'docker', lambda *a, **kw: events.append(a))

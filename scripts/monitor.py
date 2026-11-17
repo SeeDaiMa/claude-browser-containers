@@ -146,7 +146,7 @@ def tick():
                     state['stable_since'] = state['stable_since'] or now
                     if now >= state['next_probe'] and not probed_one:
                         probed_one = True
-                        observation = core.probe_proxy(row['slug'])
+                        observation = cbc.probe_proxy(row['slug'])
                         exits[row['slug']] = store.save_exit(row['slug'], observation['status'], observation['ip'], observation['detail'], observation.get('country_code'))
                         state['probe_failures'] = state['probe_failures'] + 1 if observation['status'] == 'failed' else 0
                         state['next_probe'] = now + (30 if observation['status'] == 'failed' else PROBE_INTERVAL)
@@ -222,11 +222,7 @@ def recover(task):
                 return
             cbc.compose(slug, 'up', '-d', '--no-deps', '--force-recreate', '--wait', '--wait-timeout', '90', 'proxy', timeout=120)
             core._advance(task, '验证代理连接')
-            observation = core.probe_proxy(slug)
-            core._require_same_country(slug, observation)
-            store.save_exit(slug, observation['status'], observation['ip'], observation['detail'], observation.get('country_code'))
-            if observation['status'] == 'failed':
-                raise RuntimeError('原节点连接仍然失败。')
+            cbc.verify_exit(slug)
         else:
             # guard 的网络空间不能独立重建；先正常关闭浏览器，再协调重启整个实例。
             core._stop_running(slug)

@@ -85,7 +85,7 @@ def test_instances_enrich_cached_country_without_probing(monkeypatch):
     def forbidden(slug):
         raise AssertionError('列表不能为了国家信息重新检测代理')
 
-    monkeypatch.setattr(manager_core, 'probe_proxy', forbidden)
+    monkeypatch.setattr(cbc, 'probe_proxy', forbidden)
     result = manager_core.list_instances()['instances'][0]['exit']
     assert result['country_code'] == 'US'
     assert result['checked_at'] == saved['fixture']['checked_at']
@@ -97,6 +97,6 @@ def test_proxy_detection_prefers_local_country(monkeypatch):
     monkeypatch.setattr(cbc, 'docker', lambda *args, **kwargs: SimpleNamespace(returncode=0))
     monkeypatch.setattr(cbc, 'observe_exit_info', lambda name: {'ip': '8.8.8.8', 'country_code': 'JP'})
     monkeypatch.setattr(geolocation, '_database', lambda: SimpleNamespace(get=lambda ip: {'country': {'iso_code': 'US'}}))
-    result = manager_core.probe_proxy('fixture')
+    result = cbc.probe_proxy('fixture')
     assert result['status'] == 'ok'
     assert result['country_code'] == 'US'

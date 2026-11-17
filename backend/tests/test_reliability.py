@@ -146,7 +146,7 @@ def test_same_instance_probe_and_reload_cannot_overlap_or_resurrect_deleted_exit
         started.set()
         assert release.wait(5)
         return {'status': 'ok', 'ip': '192.0.2.1', 'detail': ''}
-    monkeypatch.setattr(core, 'probe_proxy', probe)
+    monkeypatch.setattr(cbc, 'probe_proxy', probe)
     monkeypatch.setattr(cbc, 'active', lambda _slug: False)
     monkeypatch.setattr(cbc, 'down', Mock())
     def remove():
@@ -174,7 +174,7 @@ def test_locks_do_not_block_a_different_instance(isolated, monkeypatch):
     instance(isolated, 'ia')
     instance(isolated, 'ib', port=5804, network_index=10)
     monkeypatch.setattr(core, 'container_map', lambda: snapshot('ib')['containers'])
-    monkeypatch.setattr(core, 'probe_proxy', lambda _slug: {'status': 'ok', 'ip': '192.0.2.2', 'detail': ''})
+    monkeypatch.setattr(cbc, 'probe_proxy', lambda _slug: {'status': 'ok', 'ip': '192.0.2.2', 'detail': ''})
     with store.instance_operation('ia'):
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
             assert pool.submit(core.check_exit, 'ib').result(timeout=3)['ip'] == '192.0.2.2'
@@ -283,7 +283,7 @@ def test_monitor_allows_exit_change_without_recovery_or_node_change(isolated, mo
     store.save_exit('ifixture', 'ok', '192.0.2.1', '')
     before = (store.CONFIGS / 'ifixture' / 'instance.json').read_bytes()
     monkeypatch.setattr(core, 'runtime_snapshot', lambda: snapshot())
-    monkeypatch.setattr(core, 'probe_proxy', lambda _slug: {'status': 'ok', 'ip': '192.0.2.2', 'detail': ''})
+    monkeypatch.setattr(cbc, 'probe_proxy', lambda _slug: {'status': 'ok', 'ip': '192.0.2.2', 'detail': ''})
     queued = Mock()
     monkeypatch.setattr(core, 'enqueue', queued)
     monitor._state(row)['next_probe'] = 0
@@ -401,8 +401,8 @@ def test_proxy_only_recovery_preserves_browser_and_guard(isolated, monkeypatch):
     monkeypatch.setattr(cbc, 'prepare', prepare)
     monkeypatch.setattr(cbc, 'compose', compose)
     monkeypatch.setattr(core, '_stop_running', stop)
-    monkeypatch.setattr(core, 'probe_proxy', lambda _slug: {'status': 'ok', 'ip': '192.0.2.1', 'country_code': 'US', 'detail': ''})
-    monkeypatch.setattr(core, '_require_same_country', lambda _slug, _observation: None)
+    monkeypatch.setattr(cbc, 'probe_proxy', lambda _slug: {'status': 'ok', 'ip': '192.0.2.1', 'country_code': 'US', 'detail': ''})
+    monkeypatch.setattr(cbc, 'require_same_country', lambda _slug, _observation: None)
     core._dispatch(task('recover', generation='generation'))
     stop.assert_not_called()
     assert compose.call_args.args[-1] == 'proxy'
@@ -456,7 +456,7 @@ def test_periodic_probe_is_spaced_and_unknown_does_not_trigger_recovery(isolated
     store.save_exit('ifixture', 'ok', '192.0.2.1', '')
     monkeypatch.setattr(core, 'runtime_snapshot', lambda: snapshot())
     probe = Mock(return_value={'status': 'unknown', 'ip': None, 'detail': 'Claude 出口未测得'})
-    monkeypatch.setattr(core, 'probe_proxy', probe)
+    monkeypatch.setattr(cbc, 'probe_proxy', probe)
     queued = Mock()
     monkeypatch.setattr(core, 'enqueue', queued)
     monitor._state(row)['next_probe'] = 0
@@ -515,7 +515,7 @@ def test_attempts_reset_only_after_stable_success(isolated, monkeypatch):
 def test_two_connection_failures_enqueue_original_generation_recovery(isolated, monkeypatch):
     row = instance(isolated)
     monkeypatch.setattr(core, 'runtime_snapshot', lambda: snapshot())
-    monkeypatch.setattr(core, 'probe_proxy', lambda _slug: {'status': 'failed', 'ip': None, 'detail': '代理连接失败'})
+    monkeypatch.setattr(cbc, 'probe_proxy', lambda _slug: {'status': 'failed', 'ip': None, 'detail': '代理连接失败'})
     state = monitor._state(row)
     state['next_probe'] = 0
     monitor.tick()

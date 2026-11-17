@@ -956,6 +956,15 @@ def set_run_intent(slug, running):
     return generation
 
 
+def mark_running(slug, generation):
+    """启动成功后才记为应当运行；启动期间若有新的手动操作（代次已变），以新操作为准。"""
+    def mark(raw):
+        if raw.get('run_generation') == generation:
+            raw['desired_running'] = True
+
+    update_instance(slug, mark)
+
+
 def reconfirm_same_name(slug):
     """锁定后只允许在原订阅里重新确认同名节点，例如服务商更换了节点密码。"""
     with exclusive(CONFIGS / 'selection.json'):

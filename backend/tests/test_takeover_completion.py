@@ -118,7 +118,7 @@ def test_recovery_country_mismatch_disconnects_proxy_and_pauses_retries(isolated
     monkeypatch.setattr(cbc, 'prepare', lambda *args, **kwargs: None)
     monkeypatch.setattr(cbc, 'compose', lambda *args, **kwargs: events.append('proxy-up'))
     monkeypatch.setattr(cbc, 'docker', lambda *args, **kwargs: events.append(args) or SimpleNamespace(returncode=0))
-    monkeypatch.setattr(core, 'probe_proxy', lambda _: {'status': 'ok', 'ip': '1.1.1.1', 'country_code': 'JP', 'detail': ''})
+    monkeypatch.setattr(cbc, 'probe_proxy', lambda _: {'status': 'ok', 'ip': '1.1.1.1', 'country_code': 'JP', 'detail': ''})
     monkeypatch.setattr(geolocation, 'country_code', lambda value: 'US' if value == '8.8.8.8' else None)
     with pytest.raises(RuntimeError, match='已断开本实例代理'):
         monitor.recover(task('recover', generation=row['raw']['run_generation']))
@@ -167,6 +167,32 @@ def test_cli_country_failure_never_starts_browser(isolated, monkeypatch):
     assert commands and all('browser' not in command for command in commands)
     assert 'guard' in commands[0] and 'proxy' in commands[0]
     assert store.instance_by_id('ifixture')['raw']['desired_running'] is False
+
+
+def test_cli_start_shares_web_exit_check_and_records_the_exit(isolated, monkeypatch):
+    """命令行启动和网页走同一套出口检查：通过后才启动浏览器，并记下这次出口作为下次比较的基准。"""
+    instance(isolated)
+    store.save_exit('ifixture', 'ok', '8.8.4.4', '', 'JP')
+    commands = []
+    processes = '/usr/lib/chromium/chromium --type=renderer\n'
+    monkeypatch.setattr(cbc, 'active', lambda _: False)
+    monkeypatch.setattr(cbc, 'prepare', lambda *args, **kwargs: True)
+    monkeypatch.setattr(cbc, 'compose', lambda *args, **kwargs: commands.append(args))
+    monkeypatch.setattr(cbc, 'observe_exit_info', lambda _: {'ip': '1.1.1.1', 'country_code': 'JP'})
+    monkeypatch.setattr(geolocation, 'country_code', lambda _value: 'JP')
+    monkeypatch.setattr(cbc, 'docker', lambda *args, **kwargs: SimpleNamespace(
+        returncode=0, stdout=processes, stderr='',
+    ))
+    opener = SimpleNamespace(open=lambda *_args, **_kwargs: SimpleNamespace(status=200))
+    monkeypatch.setattr(cbc.urllib.request, 'build_opener', lambda *_args, **_kwargs: opener)
+    cbc.start('ifixture')
+    assert 'guard' in commands[0] and 'proxy' in commands[0]
+    assert 'browser' in commands[1]
+    record = store.load_exits()['ifixture']
+    assert record['last_success']['ip'] == '1.1.1.1'
+    assert [item['previous_ip'] for item in record['history']] == ['8.8.4.4']
+    current = store.instance_by_id('ifixture')['raw']
+    assert current['desired_running'] is True and store.proxy_locked(current)
 
 
 def test_url_update_is_background_and_keeps_binding(isolated, monkeypatch):

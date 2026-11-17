@@ -204,7 +204,7 @@ def test_probe_success_does_not_require_country_metadata(monkeypatch):
     monkeypatch.setattr(cbc, 'addresses', lambda name: {'BRIDGE_IP': '10.231.1.3'})
     monkeypatch.setattr(cbc, 'docker', lambda *args, **kwargs: SimpleNamespace(returncode=0))
     monkeypatch.setattr(cbc, 'observe_exit_info', lambda name: {'ip': '203.0.113.5', 'country_code': None})
-    result = manager_core.probe_proxy('fixture')
+    result = cbc.probe_proxy('fixture')
     assert result['status'] == 'ok'
     assert result['ip'] == '203.0.113.5'
     assert result['country_code'] is None
@@ -453,7 +453,7 @@ def test_successful_boot_locks_proxy(tmp_path, monkeypatch):
     monkeypatch.setattr(cbc, 'prepare', lambda *args, **kwargs: None)
     monkeypatch.setattr(cbc, 'compose', lambda *args, **kwargs: None)
     monkeypatch.setattr(manager_core, '_require_docker', lambda: None)
-    monkeypatch.setattr(manager_core, '_wait_ui', lambda slug: None)
+    monkeypatch.setattr(cbc, 'wait_until_ready', lambda slug: None)
     task = {'phases': manager_core._phase_list('start'), 'phase': '检查环境', 'result': {}}
     manager_core._boot(task, 'idemo', verify=False)
     assert store.proxy_locked(store.instance_by_id('idemo')['raw'])
@@ -467,7 +467,7 @@ def test_failed_boot_keeps_proxy_editable(tmp_path, monkeypatch):
     monkeypatch.setattr(cbc, 'prepare', lambda *args, **kwargs: None)
     monkeypatch.setattr(cbc, 'compose', lambda *args, **kwargs: None)
     monkeypatch.setattr(manager_core, '_require_docker', lambda: None)
-    monkeypatch.setattr(manager_core, 'probe_proxy', lambda slug: {'status': 'failed', 'ip': None, 'detail': 'x'})
+    monkeypatch.setattr(cbc, 'probe_proxy', lambda slug: {'status': 'failed', 'ip': None, 'detail': 'x'})
     task = {'phases': manager_core._phase_list('start'), 'phase': '检查环境', 'result': {}}
     try:
         manager_core._boot(task, 'idemo', verify=True)
@@ -644,10 +644,10 @@ def test_start_closes_before_browser_recreate(monkeypatch):
     monkeypatch.setattr(cbc, 'prepare', lambda *args, **kwargs: calls.append('prepare'))
     monkeypatch.setattr(cbc, 'compose', lambda *args, **kwargs: calls.append(args))
     monkeypatch.setattr(manager_core, '_require_docker', lambda: None)
-    monkeypatch.setattr(manager_core, 'probe_proxy', lambda slug: {'status': 'ok', 'ip': '192.0.2.9', 'detail': ''})
-    monkeypatch.setattr(manager_core, '_require_same_country', lambda slug, observation: None)
+    monkeypatch.setattr(cbc, 'probe_proxy', lambda slug: {'status': 'ok', 'ip': '192.0.2.9', 'detail': ''})
+    monkeypatch.setattr(cbc, 'require_same_country', lambda slug, observation: None)
     monkeypatch.setattr(store, 'save_exit', lambda *args: None)
-    monkeypatch.setattr(manager_core, '_wait_ui', lambda slug: None)
+    monkeypatch.setattr(cbc, 'wait_until_ready', lambda slug: None)
     task = {'phases': manager_core._phase_list('start'), 'phase': '检查环境', 'result': {}}
     manager_core._boot(task, 'idemo', verify=True)
     assert calls.index('close') < calls.index('prepare')
@@ -666,10 +666,10 @@ def test_unchanged_running_browser_is_not_recreated(monkeypatch):
     monkeypatch.setattr(cbc, 'prepare', lambda *args, **kwargs: calls.append('prepare'))
     monkeypatch.setattr(cbc, 'compose', lambda *args, **kwargs: calls.append(args))
     monkeypatch.setattr(manager_core, '_require_docker', lambda: None)
-    monkeypatch.setattr(manager_core, 'probe_proxy', lambda slug: {'status': 'ok', 'ip': '192.0.2.9', 'detail': ''})
-    monkeypatch.setattr(manager_core, '_require_same_country', lambda slug, observation: None)
+    monkeypatch.setattr(cbc, 'probe_proxy', lambda slug: {'status': 'ok', 'ip': '192.0.2.9', 'detail': ''})
+    monkeypatch.setattr(cbc, 'require_same_country', lambda slug, observation: None)
     monkeypatch.setattr(store, 'save_exit', lambda *args: None)
-    monkeypatch.setattr(manager_core, '_wait_ui', lambda slug: None)
+    monkeypatch.setattr(cbc, 'wait_until_ready', lambda slug: None)
     task = {'phases': manager_core._phase_list('start'), 'phase': '检查环境', 'result': {}}
     manager_core._boot(task, 'idemo', verify=True)
     assert 'close' not in calls
