@@ -43,6 +43,7 @@ MIHOMO_URL = 'https://github.com/MetaCubeX/mihomo/releases/download/v1.19.34/mih
 MIHOMO_GZIP_SHA256 = 'daaf78a6240a282cdfd75bcbf98fe321f6bd52765cc29e79f344191198f0b50f'
 MIHOMO_BINARY_SHA256 = '022da41e03ce70641a2f50c485b4f69ade8f1c7aeeece2cf1ec45c614a029441'
 MIHOMO_MAX_DOWNLOAD_BYTES = 64 * 1024 * 1024
+SECCOMP_SHA256 = '5e7994296d55cc3623fa4bd8e5682c36220c94e69b70ff2e923d3948d3a9995e'
 
 
 class SandboxError(RuntimeError):
@@ -408,7 +409,11 @@ def init():
         records[key] = {'tag': tag, 'reference': UPSTREAM[key], 'uncompressed_bytes': image['Size']}
     if not (CONFIGS / 'seccomp-default.json').exists():
         source = 'https://raw.githubusercontent.com/moby/moby/v24.0.6/profiles/seccomp/default.json'
-        save_json(CONFIGS / 'seccomp-default.json', json.load(urllib.request.urlopen(source, timeout=30)))
+        with urllib.request.urlopen(source, timeout=30) as response:
+            downloaded = response.read()
+        if hashlib.sha256(downloaded).hexdigest() != SECCOMP_SHA256:
+            raise ValueError('seccomp 下载文件 SHA-256 不符，未写入配置。')
+        save_json(CONFIGS / 'seccomp-default.json', json.loads(downloaded))
     browser = read_json(CONFIGS / 'seccomp-default.json')
     for entry in browser['syscalls']:
         if 'unshare' in entry['names']:

@@ -112,7 +112,7 @@ export function CreatePage() {
       navigate(`/instance/${task.result.instance_id}`, { replace: true })
       resetDraft()
     }
-  }, [task?.id, task?.state, navigate])
+  }, [draft.taskId, task?.id, task?.state, task?.result.instance_id, navigate, resetDraft])
 
   function focusField(target: string) {
     const element = document.getElementById(target)

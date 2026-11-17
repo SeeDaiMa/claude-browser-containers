@@ -138,7 +138,7 @@ export function SubscriptionsPage() {
       setSubmittedTask(null)
       void refresh()
     }
-  }, [addTask?.id, addTask?.state])
+  }, [addTask?.id, addTask?.state, refresh])
 
   useEffect(() => {
     if (tab !== 'nodes') return

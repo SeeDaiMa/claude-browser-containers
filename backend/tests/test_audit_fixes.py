@@ -302,10 +302,12 @@ def test_subscription_response_is_bounded_and_encoding_errors_are_public(monkeyp
     class Response(io.BytesIO):
         def __enter__(self): return self
         def __exit__(self, *args): self.close()
+        def geturl(self): return 'https://audit.example.test/sub'
         def read(self, size=-1):
             assert size == catalog.MAX_SUBSCRIPTION_BYTES + 1
             return super().read(size)
-    monkeypatch.setattr(catalog.urllib.request, 'urlopen', lambda *a, **kw: Response(content))
+    monkeypatch.setattr(catalog.urllib.request, 'build_opener',
+                        lambda *a: SimpleNamespace(open=lambda *a, **kw: Response(content)))
     with pytest.raises(catalog.CatalogError, match=error):
         catalog._download_proxies('https://audit.example.test/sub')
 

@@ -53,6 +53,16 @@ beforeEach(() => {
 })
 
 describe('代理节点列表后台刷新', () => {
+  it('尚未选来源时，同数量订阅被替换仍选用当前首个来源', async () => {
+    const value = { ...emptyProxy, subscriptionId: '' }
+    const view = render(page(value))
+    expect(state.changed).toHaveBeenLastCalledWith({ ...value, subscriptionId: 'a' })
+    state.changed.mockClear()
+    state.subscriptions = [source('c'), source('d')]
+    await act(async () => { view.rerender(page(value)) })
+    expect(state.changed).toHaveBeenLastCalledWith({ ...value, subscriptionId: 'c' })
+  })
+
   it.each(['updated_at', 'nodes_tested_at', 'nodes_quality_checked_at'] as const)(
     '%s 改变时保留列表、选择和滚动容器', async (field) => {
       const view = render(page())

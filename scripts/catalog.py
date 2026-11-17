@@ -94,10 +94,20 @@ def fetch_proxies(url):
     return payload['nodes']
 
 
+class _HTTPSRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, request, fp, code, message, headers, newurl):
+        if urllib.parse.urlsplit(newurl).scheme.lower() != 'https':
+            raise CatalogError('订阅重定向必须保持 HTTPS。')
+        return super().redirect_request(request, fp, code, message, headers, newurl)
+
+
 def _download_proxies(url):
     request = urllib.request.Request(url, headers={'User-Agent': 'clash-meta'})
     try:
-        with urllib.request.urlopen(request, timeout=SUBSCRIPTION_TIMEOUT) as response:
+        opener = urllib.request.build_opener(_HTTPSRedirectHandler())
+        with opener.open(request, timeout=SUBSCRIPTION_TIMEOUT) as response:
+            if urllib.parse.urlsplit(response.geturl()).scheme.lower() != 'https':
+                raise CatalogError('订阅下载必须保持 HTTPS。')
             payload = response.read(MAX_SUBSCRIPTION_BYTES + 1)
     except OSError as error:
         raise CatalogError(f'订阅下载失败：{error.__class__.__name__}') from error
@@ -188,13 +198,13 @@ def mihomo_config(node):
     }
 
 
-def secret_values(value):
+def secret_values(value, *, min_length=4):
     found = []
 
     def walk(item):
         if isinstance(item, dict):
             for key, child in item.items():
-                if key in SECRET_FIELDS and isinstance(child, str) and len(child) >= 4:
+                if key in SECRET_FIELDS and isinstance(child, str) and len(child) >= min_length:
                     found.append(child)
                 else:
                     walk(child)

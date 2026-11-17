@@ -210,6 +210,7 @@ export function ManagerProvider({ children }: { children: ReactNode }) {
     }
   }, [notify])
   const refresh = useCallback(() => load(true), [load])
+  const resetDraft = useCallback(() => setDraft(newDraft()), [])
 
   async function dismissExitChange(id: string, changeId: string) {
     const exit = await api.dismissExitChange(id, changeId)
@@ -331,7 +332,7 @@ export function ManagerProvider({ children }: { children: ReactNode }) {
         dismiss: (id) => setToasts((items) => items.filter((item) => item.id !== id)),
         draft,
         setDraft,
-        resetDraft: () => setDraft(newDraft()),
+        resetDraft,
       }}
     >
       {children}

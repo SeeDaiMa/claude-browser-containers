@@ -24,6 +24,8 @@ _SUBSCRIPTION_QUEUE = queue.Queue()
 _GUARD = threading.RLock()
 _ENQUEUE_GUARD = threading.RLock()
 _PERSIST_GUARD = threading.Lock()
+_SECRETS_GUARD = threading.Lock()
+_SECRETS_CACHE = {}
 _STATS = {'at': 0.0, 'rows': {}, 'docker_vm_rss_mib': None, 'docker_helper_rss_mib': None, 'error': ''}
 _WORKER = None
 _NODE_TEST_WORKER = None
@@ -61,17 +63,35 @@ def safe_error(error):
 
 
 def _known_secrets():
-    found = []
-    library = store.LIBRARY
-    if library.exists():
-        try:
-            for sub in store.load_library()['subscriptions']:
-                url = sub.get('url', '')
-                if isinstance(url, str) and len(url) > 12:
-                    found.append(url)
-        except (OSError, ValueError):
-            pass
-    return found
+    files = {store.LIBRARY, *store.CONFIGS.glob('*/proxy.json'), *(store.PRIVATE / 'nodes').glob('*.json')}
+    with _SECRETS_GUARD:
+        for path in set(_SECRETS_CACHE) - files:
+            del _SECRETS_CACHE[path]
+        found = set()
+        for path in files:
+            try:
+                status = path.stat()
+                signature = (status.st_dev, status.st_ino, status.st_mtime_ns, status.st_size)
+                cached = _SECRETS_CACHE.get(path)
+                if cached is None or cached[0] != signature:
+                    try:
+                        value = json.loads(path.read_text())
+                        values = catalog.secret_values(value, min_length=1)
+                        if path == store.LIBRARY and isinstance(value, dict):
+                            for sub in value.get('subscriptions', []):
+                                url = sub.get('url') if isinstance(sub, dict) else None
+                                if isinstance(url, str) and url:
+                                    values.append(url)
+                    except (OSError, ValueError, TypeError):
+                        # 损坏文件也按状态缓存，修复或替换后再读。
+                        values = []
+                    cached = (signature, values)
+                    _SECRETS_CACHE[path] = cached
+                found.update(cached[1])
+            except OSError:
+                # 一个损坏文件不能让其他实例的凭据失去脱敏。
+                continue
+        return sorted(found, key=len, reverse=True)
 
 
 def _phase_list(kind):

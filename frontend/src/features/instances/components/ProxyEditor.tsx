@@ -161,7 +161,7 @@ export function ProxyEditor({
   useEffect(() => {
     if (!value.subscriptionId && subscriptions[0])
       onChange({ ...value, subscriptionId: subscriptions[0].id })
-  }, [subscriptions.length, value.subscriptionId])
+  }, [subscriptions, value, onChange])
 
   useEffect(() => {
     setNodes([])

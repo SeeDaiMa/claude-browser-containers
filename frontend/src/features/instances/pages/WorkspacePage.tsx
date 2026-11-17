@@ -79,6 +79,7 @@ export function WorkspacePage() {
   const location = useLocation()
   const { data, error, tasks, isBusy, refresh, notify } = useManager()
   const item = data?.instances.find((row) => row.id === id)
+  const hasItem = !!item
   const [toolbar, setToolbar] = useState<HTMLElement | null>(null)
   const [reconnect, setReconnect] = useState(0)
   const [info, setInfo] = useState(false)
@@ -126,7 +127,7 @@ export function WorkspacePage() {
   useEffect(() => {
     if (info && new URLSearchParams(location.search).get('info') === 'ip')
       ipHistory.current?.scrollIntoView({ block: 'nearest' })
-  }, [info, location, !!item])
+  }, [info, location, hasItem])
   useLayoutEffect(() => {
     const viewport = frameViewport.current
     if (!viewport) return
