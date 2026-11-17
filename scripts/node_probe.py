@@ -10,6 +10,8 @@ import cbc
 import node_probe_worker
 import store
 
+PROBE_BATCH_SIZE = 8
+
 _QUALITY_FAILURE_DETAILS = {
     '节点配置无法通过 Mihomo 校验。', '节点配置校验超时。',
     '检测服务未能启动，请重试。', 'IPPure 请求受限，请稍后重试。',
@@ -39,7 +41,7 @@ def select_nodes(subscription_id, node_ids=None):
 
 
 class ProbeCancelled(Exception):
-    """调用方要求停在当前节点之后，已完成的节点不会被记成失败。"""
+    """调用方要求停在当前批之后，已完成的节点不会被记成失败。"""
 
     def __init__(self, results):
         super().__init__('节点检测已取消。')
@@ -52,16 +54,17 @@ def _measure_each(nodes, quality=False, on_progress=None, on_result=None):
         return _measure(nodes, quality=True) if quality else _measure(nodes)
     results = {}
     total = len(nodes)
-    for index, node in enumerate(nodes):
+    for index in range(0, total, PROBE_BATCH_SIZE):
+        batch = nodes[index:index + PROBE_BATCH_SIZE]
         if quality and index:
             time.sleep(2)
-        if on_progress(index, total, node) is False:
+        if on_progress(index, total, batch[0]) is False:
             raise ProbeCancelled(results)
-        measured = _measure([node], quality=quality)
+        measured = _measure(batch, quality=quality)
         results.update(measured)
         if on_result:
             on_result(measured)
-        if on_progress(index + 1, total, None) is False:
+        if on_progress(index + len(batch), total, None) is False:
             raise ProbeCancelled(results)
     return results
 

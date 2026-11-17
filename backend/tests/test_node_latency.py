@@ -27,6 +27,8 @@ from app.main import app
 def library(tmp_path, monkeypatch):
     configs = tmp_path / 'configs'
     private = configs / 'private'
+    monkeypatch.setattr(cbc, 'ROOT', tmp_path)
+    (tmp_path / 'images.lock.json').write_text(json.dumps({'network': {'reference': 'fixture-network-image'}}))
     for key, value in {
         'ROOT': tmp_path, 'CONFIGS': configs, 'PRIVATE': private,
         'LIBRARY': private / 'library.json', 'EXITS': private / 'exits.json',
@@ -137,7 +139,7 @@ def test_endpoint_keeps_local_request_protection_and_rejects_stale_ids(client, l
     assert not core._TASKS
 
 
-def test_progress_runs_one_node_at_a_time_and_cancel_stops_the_rest(library, monkeypatch):
+def test_single_node_selection_keeps_cancelled_result_and_unselected_nodes(library, monkeypatch):
     calls = []
 
     def measure(nodes, quality=False):
@@ -153,7 +155,7 @@ def test_progress_runs_one_node_at_a_time_and_cancel_stops_the_rest(library, mon
         return completed == 0
 
     with pytest.raises(node_probe.ProbeCancelled):
-        node_probe.test_subscription(library.id, [node['id'] for node in library.nodes[:2]], on_progress=progress)
+        node_probe.test_subscription(library.id, [library.nodes[0]['id']], on_progress=progress)
     assert calls == [library.nodes[0]['id']]
     assert seen[0][0] == 0 and seen[1][0] == 1
     assert store.public_nodes(library.id)[0]['test']['status'] == 'failed'
@@ -200,6 +202,7 @@ def test_docker_receives_credentials_only_on_stdin_and_removes_its_temporary_con
     results = node_probe._measure(library.nodes[:1])
     assert results[library.nodes[0]['id']]['delay_ms'] == 0
     args, options = calls[0]
+    assert 'fixture-network-image' in args
     assert 'fixture-secret-one' in options['input']
     assert 'fixture-secret-one' not in ' '.join(args)
     assert not any(value in args for value in ('-p', '--publish', '-v', '--volume', '--mount', '--privileged'))

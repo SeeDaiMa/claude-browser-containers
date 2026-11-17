@@ -33,7 +33,7 @@ export function NodeTaskNotice({ task, subscriptionName }: { task: Task; subscri
         </Button>
       }
     >
-      {progressText(task)}。取消后，当前节点结束就停止后续检测，已完成结果会保留。
+      {progressText(task)}。取消后，当前批次结束就停止后续检测，已完成结果会保留。
     </Notice>
   )
 }

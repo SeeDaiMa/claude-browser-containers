@@ -1,5 +1,4 @@
 """接手未完成开发后的功能闭环回归。仅使用临时目录及明确的 Docker/网络夹具。"""
-import json
 import queue
 from pathlib import Path
 import sys
@@ -19,7 +18,7 @@ import monitor
 import node_probe
 import store
 from app import main
-from test_reliability import isolated, instance, snapshot, task
+from test_reliability import isolated as isolated, instance, snapshot, task
 
 
 def nodes():
@@ -45,7 +44,7 @@ def test_running_cancellation_keeps_current_result_and_worker_processes_next_tas
     identity, cached = subscription()
     work = FiniteQueue()
     monkeypatch.setattr(core, '_NODE_TEST_QUEUE', work)
-    first = core.enqueue('test-nodes', payload={'subscription_id': identity, 'node_ids': [row['id'] for row in cached]})
+    first = core.enqueue('test-nodes', payload={'subscription_id': identity, 'node_ids': [cached[0]['id']]})
     second = core.enqueue('check-node-quality', payload={'subscription_id': identity, 'node_ids': [cached[0]['id']]})
     measured = []
 
@@ -95,14 +94,15 @@ def test_cancel_at_dispatch_completion_does_not_exit_worker(isolated, monkeypatc
     assert core.get_task(second['id'])['state'] == 'succeeded'
 
 
-def test_quality_progress_keeps_two_second_spacing(isolated, monkeypatch):
+def test_quality_progress_sends_small_selection_to_one_serial_worker(isolated, monkeypatch):
     identity, cached = subscription()
     events = []
     monkeypatch.setattr(node_probe.time, 'sleep', lambda seconds: events.append(('wait', seconds)))
     monkeypatch.setattr(node_probe, '_measure', lambda selected, quality=False:
-                        events.append(('measure', selected[0]['id'])) or {selected[0]['id']: {'status': 'partial', 'detail': 'fixture'}})
+                        events.append(('measure', [node['id'] for node in selected])) or
+                        {node['id']: {'status': 'partial', 'detail': 'fixture'} for node in selected})
     result = node_probe.check_quality(identity, [row['id'] for row in cached], on_progress=lambda *_: True)
-    assert events == [('measure', cached[0]['id']), ('wait', 2), ('measure', cached[1]['id'])]
+    assert events == [('measure', [node['id'] for node in cached])]
     assert result['completed'] == 2 and result['partial'] == 2
 
 
