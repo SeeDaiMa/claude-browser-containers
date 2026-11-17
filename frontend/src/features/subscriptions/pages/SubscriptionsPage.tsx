@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useManager } from '../../../app/ManagerProvider'
 import { api, type NodeRow, type Subscription, type Task } from '../../../shared/api/client'
@@ -96,10 +96,10 @@ export function SubscriptionsPage() {
   const [nodeLoading, setNodeLoading] = useState(false)
   // 首次读取完成前不能显示“没有匹配的节点”；之后后台刷新时保留旧表格，避免闪烁。
   const [nodesFetched, setNodesFetched] = useState(false)
+  const nodeRequests = useRef(new Map<string, { key: string; request: Promise<LibraryNode[]> }>())
   const [nodeAction, setNodeAction] = useState<'test' | 'quality' | null>(null)
   const addTask = tasks.find((task) => task.id === addTaskId) || submittedTask
   const addingBusy = pending || !!(addTask && isActive(addTask))
-  const subscriptionKey = subscriptions.map((item) => `${item.id}:${item.updated_at}:${item.nodes_tested_at}:${item.nodes_quality_checked_at}`).join('|')
 
   useEffect(() => {
     try {
@@ -137,12 +137,27 @@ export function SubscriptionsPage() {
   useEffect(() => {
     if (tab !== 'nodes') return
     let cancelled = false
+    const cache = nodeRequests.current
+    const currentIds = new Set(subscriptions.map((subscription) => subscription.id))
+    for (const id of cache.keys()) {
+      if (!currentIds.has(id)) cache.delete(id)
+    }
     setNodeLoading(true)
     setNodeError('')
     Promise.all(
-      subscriptions.map(async (subscription) => {
-        const payload = await api.nodes(subscription.id)
-        return payload.nodes.map((node) => ({ ...node, subscriptionId: subscription.id }))
+      subscriptions.map((subscription) => {
+        const key = JSON.stringify([subscription.updated_at, subscription.nodes_tested_at, subscription.nodes_quality_checked_at])
+        const cached = cache.get(subscription.id)
+        if (cached?.key === key) return cached.request
+        const request = api.nodes(subscription.id).then((payload) =>
+          payload.nodes.map((node) => ({ ...node, subscriptionId: subscription.id })),
+        )
+        const entry = { key, request }
+        cache.set(subscription.id, entry)
+        void request.catch(() => {
+          if (cache.get(subscription.id) === entry) cache.delete(subscription.id)
+        })
+        return request
       }),
     )
       .then((rows) => {
@@ -165,7 +180,7 @@ export function SubscriptionsPage() {
     return () => {
       cancelled = true
     }
-  }, [tab, subscriptionKey])
+  }, [tab, subscriptions])
 
   async function add() {
     const validation: Record<string, string> = {}

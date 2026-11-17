@@ -161,8 +161,11 @@ export function ProxyEditor({
   }, [subscriptions.length, value.subscriptionId])
 
   useEffect(() => {
-    let cancelled = false
     setNodes([])
+  }, [value.subscriptionId, subscription?.id])
+
+  useEffect(() => {
+    let cancelled = false
     setError('')
     if (!value.subscriptionId) return
     setLoading(true)
@@ -402,7 +405,7 @@ export function ProxyEditor({
             </Button>
           </div>
         </div>
-        {loading ? (
+        {loading && !nodes.length ? (
           <div className="loading-state">
             <span className="cm-spin" />
             正在读取节点…
