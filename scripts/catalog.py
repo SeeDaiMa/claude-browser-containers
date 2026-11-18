@@ -6,6 +6,7 @@ from pathlib import Path
 import socket
 import subprocess
 import sys
+import time
 import urllib.parse
 import urllib.request
 
@@ -14,6 +15,10 @@ SECRET_FIELDS = ('password', 'uuid', 'private-key', 'public-key', 'short-id')
 MAX_SUBSCRIPTION_BYTES = 2 * 1024 * 1024
 MAX_SUBSCRIPTION_NODES = 5000
 SUBSCRIPTION_TIMEOUT = 30
+# 同一服务商的两个地址轮换；本机到 DoH 的 TLS 连接偶尔会被中途断开。
+DOH_ENDPOINTS = ('https://1.1.1.1/dns-query', 'https://1.0.0.1/dns-query')
+DOH_ATTEMPTS = 4
+DOH_RETRY_DELAY = 0.5
 
 
 class CatalogError(ValueError):
@@ -241,16 +246,25 @@ def _public_ipv4(host, port):
 
 
 def _doh_ipv4(host):
-    request = urllib.request.Request(
-        'https://1.1.1.1/dns-query?name=' + urllib.parse.quote(host) + '&type=A',
-        headers={'Accept': 'application/dns-json'},
-    )
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-    try:
-        with opener.open(request, timeout=8) as response:
-            payload = json.loads(response.read().decode())
-    except (OSError, ValueError) as error:
-        raise CatalogError(f'节点服务器“{host}”无法解析出公网 IPv4。') from error
+    last_error = None
+    for attempt in range(DOH_ATTEMPTS):
+        if attempt:
+            time.sleep(DOH_RETRY_DELAY)
+        endpoint = DOH_ENDPOINTS[attempt % len(DOH_ENDPOINTS)]
+        request = urllib.request.Request(
+            f'{endpoint}?name={urllib.parse.quote(host)}&type=A',
+            headers={'Accept': 'application/dns-json'},
+        )
+        try:
+            with opener.open(request, timeout=8) as response:
+                payload = json.loads(response.read().decode())
+            break
+        except (OSError, ValueError) as error:
+            # 单次连接被断开不代表域名无法解析；全部失败才报错，避免启动和自动恢复白白失败。
+            last_error = error
+    else:
+        raise CatalogError(f'节点服务器“{host}”无法解析出公网 IPv4。') from last_error
     found = []
     for answer in payload.get('Answer') or []:
         data = str(answer.get('data', ''))

@@ -46,6 +46,9 @@ MIHOMO_URL = 'https://github.com/MetaCubeX/mihomo/releases/download/v1.19.34/mih
 MIHOMO_GZIP_SHA256 = 'daaf78a6240a282cdfd75bcbf98fe321f6bd52765cc29e79f344191198f0b50f'
 MIHOMO_BINARY_SHA256 = '022da41e03ce70641a2f50c485b4f69ade8f1c7aeeece2cf1ec45c614a029441'
 MIHOMO_MAX_DOWNLOAD_BYTES = 64 * 1024 * 1024
+# 节点链路偶尔单次请求失败；出口验证失败会断开代理并停止自动恢复，所以先重试再下结论。
+EXIT_PROBE_ATTEMPTS = 3
+EXIT_PROBE_RETRY_DELAY = 2
 SECCOMP_SHA256 = '5e7994296d55cc3623fa4bd8e5682c36220c94e69b70ff2e923d3948d3a9995e'
 
 
@@ -845,7 +848,13 @@ def verify_exit(name):
     """
     import store
 
+    # 只重试没测到出口的结果；测到了但国家不符是真实的策略拒绝，不能靠重试绕过。
     observation = probe_proxy(name)
+    for _ in range(EXIT_PROBE_ATTEMPTS - 1):
+        if observation['status'] == 'ok':
+            break
+        time.sleep(EXIT_PROBE_RETRY_DELAY)
+        observation = probe_proxy(name)
     require_same_country(name, observation)
     store.save_exit(
         name, observation['status'], observation['ip'], observation['detail'], observation.get('country_code')
