@@ -454,6 +454,8 @@ def test_restore_drops_run_intent_so_monitor_does_not_start_it(isolated, monkeyp
     )
     monkeypatch.setattr(cbc, 'active', lambda _name: False)
     monkeypatch.setattr(cbc, 'network_index_conflicts', lambda _index: False)
+    # 夹具端口 5803 可能正被本机真实实例占用；这里只验证运行意图，不依赖本机端口状态。
+    monkeypatch.setattr(cbc, '_port_free', lambda _port: True)
     archive = isolated / 'ifixture.tgz'
     cbc.backup_instance('ifixture', archive)
     with tarfile.open(archive) as bundle:
