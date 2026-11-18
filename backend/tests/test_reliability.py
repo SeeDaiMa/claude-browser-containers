@@ -399,10 +399,13 @@ def test_overview_batches_commands_and_shares_cache(isolated, monkeypatch):
 
     monkeypatch.setattr(cbc, 'docker', docker)
     result = core.list_instances()
-    assert commands == ['ps', 'inspect', 'stats']
     assert result['instances'][0]['usage']['memory_limit_mib'] == 192
+    # 首次概览不等待 docker stats 采样，资源用量由后台补上。
+    assert result['instances'][0]['usage']['memory_mib'] is None
+    core.wait_for_stats_refresh(5)
+    assert commands == ['ps', 'inspect', 'stats']
+    result = core.list_instances()
     assert result['instances'][0]['usage']['memory_mib'] == 6
-    core.list_instances()
     assert commands == ['ps', 'inspect', 'stats']
     core._host_memory.assert_called_once()
     core._self_rss.assert_called_once()

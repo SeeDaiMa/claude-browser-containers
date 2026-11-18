@@ -28,6 +28,10 @@ _PERSIST_GUARD = threading.Lock()
 _SECRETS_GUARD = threading.Lock()
 _SECRETS_CACHE = {}
 _STATS = {'at': 0.0, 'rows': {}, 'docker_vm_rss_mib': None, 'docker_helper_rss_mib': None, 'error': ''}
+_STATS_GUARD = threading.Lock()
+# generation 在每次实例启停后加一，用来识别采集期间已经过时的结果。
+_STATS_REFRESH = {'thread': None, 'generation': 0}
+STATS_MAX_AGE = 10
 _WORKER = None
 _NODE_TEST_WORKER = None
 _SUBSCRIPTION_WORKER = None
@@ -828,8 +832,10 @@ def runtime_snapshot(force=False):
 def invalidate_runtime():
     with _RUNTIME_GUARD:
         _RUNTIME['at'] = 0.0
-    with _COLLECTION_GUARD:
+    with _STATS_GUARD:
         _STATS['at'] = 0.0
+        _STATS_REFRESH['generation'] += 1
+    with _COLLECTION_GUARD:
         _LIMIT_CACHE.clear()
 
 
@@ -848,15 +854,52 @@ def _runtime_state(slug, containers, health=None):
 
 
 def _stats(mapped=None):
-    now = time.monotonic()
-    if now - _STATS['at'] < 10:
-        return _STATS
+    """返回最近一次资源统计；过期时在后台刷新。
+
+    docker stats 要先采样 CPU，一次需要一两秒。放在请求里会让这次概览和排在锁后的请求一起变慢。
+    """
+    with _STATS_GUARD:
+        current = dict(_STATS)
+        thread = _STATS_REFRESH['thread']
+        stale = time.monotonic() - current['at'] >= STATS_MAX_AGE
+        if stale and not (thread and thread.is_alive()):
+            thread = threading.Thread(
+                target=_refresh_stats,
+                args=(mapped, _STATS_REFRESH['generation']),
+                name='cbc-stats',
+                daemon=True,
+            )
+            _STATS_REFRESH['thread'] = thread
+            thread.start()
+    return current
+
+
+def wait_for_stats_refresh(timeout=None):
+    """等待正在进行的后台资源统计结束；测试用它得到确定的结果。"""
+    thread = _STATS_REFRESH['thread']
+    if thread:
+        thread.join(timeout)
+
+
+def _refresh_stats(mapped, generation):
+    started = time.monotonic()
+    try:
+        update = _collect_stats(mapped)
+    except Exception:
+        # 后台线程的异常没有调用方接住；按读不到资源处理，下次请求再试。
+        update = {'rows': {}, 'error': '容器资源暂时读不到'}
+    with _STATS_GUARD:
+        # 采集期间实例有过启停时，结果可能已过时：先展示，但标记为过期，下次请求立即重新采集。
+        fresh = generation == _STATS_REFRESH['generation']
+        _STATS.update(update, at=started if fresh else 0.0)
+
+
+def _collect_stats(mapped):
     if mapped is None:
         mapped = container_map() or {}
     names = [name for name, state in mapped.items() if name.startswith('cbc-') and state == 'running']
     if not names:
-        _STATS.update({'at': now, 'rows': {}, 'error': '', 'manager_rss_mib': _self_rss(), **_host_memory()})
-        return _STATS
+        return {'rows': {}, 'error': '', 'manager_rss_mib': _self_rss(), **_host_memory()}
     rows = {}
     error = ''
     try:
@@ -872,8 +915,7 @@ def _stats(mapped=None):
                 rows[name] = {'cpu': _cpu(item.get('CPUPerc', '')), 'memory_mib': _memory(item.get('MemUsage', ''))}
     except (OSError, ValueError, subprocess.TimeoutExpired):
         error = '容器资源暂时读不到'
-    _STATS.update({'at': now, 'rows': rows, 'error': error, 'manager_rss_mib': _self_rss(), **_host_memory()})
-    return _STATS
+    return {'rows': rows, 'error': error, 'manager_rss_mib': _self_rss(), **_host_memory()}
 
 
 def _cpu(value):
@@ -1018,14 +1060,15 @@ def _memory_limits(slug):
     return _compose_limits(slug)
 
 
-def _instance_usage(slug, stats):
+def _instance_usage(slug, stats, containers):
     names = [cbc.container(slug, role) for role in reversed(ROLES)]
     limits = _memory_limits(slug)
     memory = 0.0
     cpu = 0.0
     complete = not stats['error']
     for name in names:
-        row = stats['rows'].get(name)
+        # 统计在后台刷新，可能晚于启停；只采用此刻仍在运行的容器的数据。
+        row = stats['rows'].get(name) if containers.get(name) == 'running' else None
         if not row or row['memory_mib'] is None or row['cpu'] is None:
             complete = False
             break
@@ -1060,7 +1103,7 @@ def _list_instances():
     rows = []
     for item in items:
         if report['ok']:
-            usage = _instance_usage(item['slug'], stats)
+            usage = _instance_usage(item['slug'], stats, containers or {})
         else:
             limits = _memory_limits(item['slug'])
             usage = {

@@ -6,6 +6,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'scripts'))
 import catalog
 import cbc
+import manager_core
 import monitor
 
 
@@ -21,3 +22,10 @@ def no_network_retry_wait(monkeypatch):
     """重试次数照常生效，只去掉等待，避免模拟失败的测试平白多等几秒。"""
     monkeypatch.setattr(cbc, 'EXIT_PROBE_RETRY_DELAY', 0)
     monkeypatch.setattr(catalog, 'DOH_RETRY_DELAY', 0)
+
+
+@pytest.fixture(autouse=True)
+def finish_background_stats(monkeypatch):
+    """后台资源统计在用例的替身撤销前结束，避免写进下一个用例。"""
+    yield
+    manager_core.wait_for_stats_refresh(5)
