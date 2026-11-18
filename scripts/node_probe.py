@@ -137,7 +137,8 @@ def _measure(nodes, quality=False):
     image = cbc.read_json(cbc.ROOT / 'images.lock.json')['network']['reference']
     node_configs = [{'id': node['id'], 'config': node['config']} for node in nodes]
     payload = {'mode': 'quality', 'nodes': node_configs} if quality else node_configs
-    timeout = 20 + len(nodes) * 3 + (len(nodes) * 14 if quality else math.ceil(len(nodes) / 4) * 10)
+    # 每个节点：配置校验最多 3 秒；IP 质量请求 12 秒、节点间隔 2 秒，另留 2 秒余量，避免整批在边界上超时。
+    timeout = 20 + len(nodes) * 3 + (len(nodes) * 16 if quality else math.ceil(len(nodes) / 4) * 10)
     action = 'IP 质量检测' if quality else '测速'
     try:
         result = cbc.docker(

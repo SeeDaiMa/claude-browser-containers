@@ -15,6 +15,8 @@ MAX_ATTEMPTS = 3
 RETRY_DELAYS = (30, 120, 300)
 STABLE_SECONDS = 300
 RECOVERY_REASON_CHARS = 120
+# 连续两轮（约 10–20 秒）都发现容器不在运行才恢复；单次 Docker 查询抖动不触发。
+COMPONENT_FAILURE_LIMIT = 2
 _STOP = threading.Event()
 _THREAD = None
 _STATE = {}
@@ -209,7 +211,7 @@ def tick():
                         if row['raw'].get('recovery'):
                             store.update_instance(row['slug'], lambda raw: raw.update(recovery={}))
                 recovery = row['raw'].get('recovery') or {}
-                should_recover = state['component_failures'] >= 3 or state['probe_failures'] >= 2
+                should_recover = state['component_failures'] >= COMPONENT_FAILURE_LIMIT or state['probe_failures'] >= 2
                 if should_recover and recovery.get('attempts', 0) >= MAX_ATTEMPTS and not recovery.get('exhausted'):
 
                     def exhaust(raw, row=row, recovery=recovery):

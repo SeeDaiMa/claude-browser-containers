@@ -135,3 +135,31 @@ def test_decompression_failure_stops_without_replacing_binary(resources, monkeyp
     with pytest.raises(ValueError, match='解压'):
         cbc.init()
     assert not resources.mihomo.exists()
+
+
+def compile_runs(resources):
+    return sum(1 for args in resources.commands if args[0] == 'run')
+
+
+def test_unchanged_clipboard_helper_is_not_rebuilt(resources):
+    cbc.init()
+    built = resources.helper.read_bytes()
+    cbc.init()
+    assert compile_runs(resources) == 1
+    assert resources.helper.read_bytes() == built
+
+
+@pytest.mark.parametrize('change', ['source', 'helper', 'record'])
+def test_clipboard_helper_rebuilds_when_source_helper_or_record_changes(resources, change):
+    cbc.init()
+    record = resources.helper.with_name('cbc-clipboard-image.build.json')
+    if change == 'source':
+        (cbc.CONFIGS / 'cbc-clipboard-image.c').write_text('/* changed source */')
+    elif change == 'helper':
+        resources.helper.write_bytes(b'replaced helper')
+    else:
+        record.write_text('{broken')
+    cbc.init()
+    assert compile_runs(resources) == 2
+    assert resources.helper.read_bytes() == b'fixture compiled helper'
+    assert json.loads(record.read_text())['recipe']['image'] == cbc.CLIPBOARD_BUILD_IMAGE

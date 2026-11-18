@@ -424,8 +424,8 @@ def test_monitor_waits_for_repeated_component_failure(isolated, monkeypatch):
     monkeypatch.setattr(core, 'runtime_snapshot', lambda: snapshot(broken='proxy'))
     queued = Mock()
     monkeypatch.setattr(core, 'enqueue', queued)
-    monitor.tick()
-    monitor.tick()
+    for _ in range(monitor.COMPONENT_FAILURE_LIMIT - 1):
+        monitor.tick()
     queued.assert_not_called()
     monitor.tick()
     queued.assert_called_once_with('recover', 'ifixture', payload={'generation': 'generation'})

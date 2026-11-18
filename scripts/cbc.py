@@ -2,6 +2,7 @@
 """Local-only manager; stdlib only. Credentials are never command arguments."""
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 import datetime
 import fcntl
@@ -49,6 +50,11 @@ MIHOMO_MAX_DOWNLOAD_BYTES = 64 * 1024 * 1024
 # 节点链路偶尔单次请求失败；出口验证失败会断开代理并停止自动恢复，所以先重试再下结论。
 EXIT_PROBE_ATTEMPTS = 3
 EXIT_PROBE_RETRY_DELAY = 2
+CLIPBOARD_BUILD_IMAGE = 'alpine:3.24'
+CLIPBOARD_BUILD_SCRIPT = (
+    'apk add --no-cache gcc musl-dev libx11-dev && '
+    'gcc -O2 -Wall -Wextra -o /out/cbc-clipboard-image /src/cbc-clipboard-image.c -lX11'
+)
 SECCOMP_SHA256 = '5e7994296d55cc3623fa4bd8e5682c36220c94e69b70ff2e923d3948d3a9995e'
 
 
@@ -494,6 +500,26 @@ def _prepare_mihomo():
 
 def _prepare_clipboard_helper():
     target = CONFIGS / 'bin/cbc-clipboard-image'
+    record = target.with_name('cbc-clipboard-image.build.json')
+    source = CONFIGS / 'cbc-clipboard-image.c'
+    recipe = {
+        'source_sha256': hashlib.sha256(source.read_bytes()).hexdigest(),
+        'image': CLIPBOARD_BUILD_IMAGE,
+        'script': CLIPBOARD_BUILD_SCRIPT,
+    }
+    # 编译器更新会产出不同的程序，进而改变浏览器修订号、让所有实例重建浏览器容器。
+    # 源码和构建方式都没变、程序也未被替换时，沿用上次的产物。
+    if target.is_file():
+        try:
+            built = read_json(record)
+        except (OSError, ValueError):
+            built = None
+        if (
+            isinstance(built, dict)
+            and built.get('recipe') == recipe
+            and built.get('binary_sha256') == hashlib.sha256(target.read_bytes()).hexdigest()
+        ):
+            return
     target.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='.clipboard-build-', dir=target.parent) as directory:
         docker(
@@ -502,22 +528,22 @@ def _prepare_clipboard_helper():
             '--platform',
             'linux/arm64',
             '-v',
-            f'{CONFIGS / "cbc-clipboard-image.c"}:/src/cbc-clipboard-image.c:ro',
+            f'{source}:/src/cbc-clipboard-image.c:ro',
             '-v',
             f'{directory}:/out',
             '-w',
             '/src',
-            'alpine:3.24',
+            CLIPBOARD_BUILD_IMAGE,
             'sh',
             '-ec',
-            'apk add --no-cache gcc musl-dev libx11-dev && '
-            'gcc -O2 -Wall -Wextra -o /out/cbc-clipboard-image /src/cbc-clipboard-image.c -lX11',
+            CLIPBOARD_BUILD_SCRIPT,
             capture=False,
             timeout=IMAGE_BUILD_TIMEOUT,
         )
         prepared = Path(directory) / 'cbc-clipboard-image'
         prepared.chmod(0o755)
         os.replace(prepared, target)
+    save_json(record, {'recipe': recipe, 'binary_sha256': hashlib.sha256(target.read_bytes()).hexdigest()})
 
 
 def init():
@@ -828,13 +854,29 @@ def require_same_country(name, observation):
 
 
 def probe_proxy(name):
-    """先确认本实例代理能访问公网，再读取 Claude 看到的出口 IP 和国家。"""
+    """确认本实例代理能访问公网，并读取 Claude 看到的出口 IP 和国家。
+
+    两项检查同时进行；公网访问失败时仍判定为代理连接失败，Claude 出口结果不参与。
+    """
     import geolocation
 
     address = addresses(name)
     proxy = f'http://{address["BRIDGE_IP"]}:8080'
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        exit_info = pool.submit(observe_exit_info, name)
+        page = _reach_public_site(name, proxy)
+        observed = exit_info.result()
+    if page is None or page.returncode != 0:
+        return {'status': 'failed', 'ip': None, 'detail': '代理连接失败'}
+    if observed['ip']:
+        country = geolocation.country_code(observed['ip']) or observed.get('country_code')
+        return {'status': 'ok', **observed, 'country_code': country, 'detail': ''}
+    return {'status': 'unknown', 'ip': None, 'detail': 'Claude 出口未测得'}
+
+
+def _reach_public_site(name, proxy):
     try:
-        page = docker(
+        return docker(
             'exec',
             container(name, 'guard'),
             'curl',
@@ -852,14 +894,7 @@ def probe_proxy(name):
             timeout=20,
         )
     except (OSError, subprocess.TimeoutExpired):
-        return {'status': 'failed', 'ip': None, 'detail': '代理连接失败'}
-    if page.returncode != 0:
-        return {'status': 'failed', 'ip': None, 'detail': '代理连接失败'}
-    observed = observe_exit_info(name)
-    if observed['ip']:
-        country = geolocation.country_code(observed['ip']) or observed.get('country_code')
-        return {'status': 'ok', **observed, 'country_code': country, 'detail': ''}
-    return {'status': 'unknown', 'ip': None, 'detail': 'Claude 出口未测得'}
+        return None
 
 
 def verify_exit(name):
