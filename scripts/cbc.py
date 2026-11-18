@@ -270,11 +270,32 @@ def node_upstream(name):
         import store
 
         node = store.materialize_node(record.get('subscription_id', ''), record['node_id'])
-        pinned, address, port = catalog.pin_endpoint(node)
+        cache = CONFIGS / name / 'runtime' / 'endpoint.json'
+        pinned, address, port = catalog.pin_endpoint(node, known_address=_known_endpoint(cache, node))
+        remembered = {'server': str(node['server']), 'port': port, 'address': address}
+        if _read_endpoint(cache) != remembered:
+            save_json(cache, remembered, private=True)
         return {'node': pinned, 'upstream': [address], 'port': port, 'label': node['name']}
     if selected_label(name):
         raise ValueError('节点绑定缺少节点 ID，请在网页管理台重新选择或确认节点。')
     return None
+
+
+def _read_endpoint(path):
+    try:
+        value = read_json(path)
+    except (OSError, ValueError):
+        return None
+    return value if isinstance(value, dict) else None
+
+
+def _known_endpoint(path, node):
+    """只沿用同一服务器和端口上次固定成功的地址；换了节点或记录损坏就不用。"""
+    cached = _read_endpoint(path)
+    if not cached or cached.get('server') != str(node['server']) or cached.get('port') != int(node['port']):
+        return None
+    address = cached.get('address')
+    return address if isinstance(address, str) else None
 
 
 def proxy_plan(name, proxy):

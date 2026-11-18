@@ -14,6 +14,7 @@ PROBE_INTERVAL = 600
 MAX_ATTEMPTS = 3
 RETRY_DELAYS = (30, 120, 300)
 STABLE_SECONDS = 300
+RECOVERY_REASON_CHARS = 120
 _STOP = threading.Event()
 _THREAD = None
 _STATE = {}
@@ -326,11 +327,13 @@ def recover(task):
             result['exhausted'] = True
             result['detail'] = str(error)
         else:
+            # 带上脱敏后的原因，界面和任务记录都能看出是解析、启动还是出口验证出了问题。
+            reason = core.safe_error(error)[:RECOVERY_REASON_CHARS]
             result['exhausted'] = attempt >= MAX_ATTEMPTS
             result['detail'] = (
-                '自动恢复已达 3 次上限，请检查原节点后手动启动。'
+                f'自动恢复已达 3 次上限（最后一次：{reason}），请检查原节点后手动启动。'
                 if result['exhausted']
-                else f'第 {attempt}/{MAX_ATTEMPTS} 次恢复未成功，将等待后重试原节点。'
+                else f'第 {attempt}/{MAX_ATTEMPTS} 次恢复未成功（{reason}），将等待后重试原节点。'
             )
         raise RuntimeError(result['detail']) from None
     finally:

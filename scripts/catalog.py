@@ -147,14 +147,20 @@ def _fetch_worker():
     sys.stdout.write(output)
 
 
-def pin_endpoint(node):
+def pin_endpoint(node, known_address=None):
     """容器内不能解析域名。在 Mac 上选定一个能握手的公网 IPv4，TLS 名称仍用原来的主机名。
 
     本机 DNS 可能被 Clash 劫持成 198.18.0.0/15 假地址，容器访问不到。那种结果要丢掉，改用 DoH。
+    known_address 是同一节点上次固定成功的地址；DoH 短暂中断时，它仍能连通才沿用。
     """
     original = str(node['server'])
     port = int(node['port'])
-    addresses = _public_ipv4(original, port)
+    try:
+        addresses = _public_ipv4(original, port)
+    except CatalogError:
+        if not known_address or not _usable_ipv4(known_address):
+            raise
+        addresses = [known_address]
     reachable = [address for address in addresses if _tcp_open(address, port)]
     if not reachable:
         raise CatalogError(f'节点“{node["name"]}”的服务器端口目前连不上。')

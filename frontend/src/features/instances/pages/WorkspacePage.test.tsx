@@ -238,6 +238,75 @@ describe('工作区保留现有画面', () => {
     expect(screen.getByTitle('测试A的浏览器画面')).toBe(reconnected)
   })
 
+  it.each(['stop', 'trash', 'purge'])(
+    '%s 任务成功后立即卸载画面，迟到的运行中快照不会带回',
+    async (kind) => {
+      await mount()
+      expect(screen.getByTitle('测试A的浏览器画面')).toBeTruthy()
+      tasks = [
+        {
+          id: 'fixture-stop',
+          kind,
+          instance_id: 'a',
+          state: 'running',
+          phase: 'fixture',
+          phases: [],
+          error: '',
+          result: {},
+        },
+      ]
+      await poll(overview())
+      expect(screen.getByTitle('测试A的浏览器画面')).toBeTruthy()
+      tasks = [{ ...tasks[0], state: 'succeeded' }]
+      await poll(overview())
+      expect(screen.queryByTitle('测试A的浏览器画面')).toBeNull()
+      await poll(overview())
+      expect(screen.queryByTitle('测试A的浏览器画面')).toBeNull()
+      await poll(overview('stopped'))
+      await poll(overview())
+      expect(screen.getByTitle('测试A的浏览器画面')).toBeTruthy()
+    },
+  )
+
+  it('打开页面前已完成的停止任务不会卸载正在运行的画面', async () => {
+    tasks = [
+      {
+        id: 'old-stop',
+        kind: 'stop',
+        instance_id: 'a',
+        state: 'succeeded',
+        phase: 'fixture',
+        phases: [],
+        error: '',
+        result: {},
+      },
+    ]
+    await mount()
+    const frame = screen.getByTitle('测试A的浏览器画面')
+    await poll(overview())
+    expect(screen.getByTitle('测试A的浏览器画面')).toBe(frame)
+  })
+
+  it('其他实例的停止任务不影响当前画面', async () => {
+    await mount()
+    const frame = screen.getByTitle('测试A的浏览器画面')
+    const other = {
+      id: 'other-stop',
+      kind: 'stop',
+      instance_id: 'b',
+      state: 'running',
+      phase: 'fixture',
+      phases: [],
+      error: '',
+      result: {},
+    }
+    tasks = [other]
+    await poll(overview())
+    tasks = [{ ...other, state: 'succeeded' }]
+    await poll(overview())
+    expect(screen.getByTitle('测试A的浏览器画面')).toBe(frame)
+  })
+
   it('画面已关闭后启动只创建一个新 iframe', async () => {
     snapshot = overview('stopped')
     await mount()

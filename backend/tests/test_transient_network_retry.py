@@ -1,4 +1,4 @@
-"""偶发网络失败的重试回归：节点域名 DoH 解析和启动/恢复时的出口验证。"""
+"""偶发网络失败的回归：DoH 解析重试、沿用上次地址、出口验证重试和恢复失败原因。"""
 
 import io
 import json
@@ -150,3 +150,89 @@ def test_recovery_survives_one_dropped_probe(exit_check, monkeypatch):
     assert record['exhausted'] is False and record['attempts'] == 1
     assert '已恢复' in recovery['result']['detail']
     assert docker_calls == []
+
+
+NODE = {'name': '节点 A', 'type': 'trojan', 'server': 'node.example', 'port': 443, 'password': 'secret'}
+
+
+def resolution_fails(*_args):
+    raise catalog.CatalogError('节点服务器“node.example”无法解析出公网 IPv4。')
+
+
+def test_pin_endpoint_reuses_reachable_known_address_when_resolution_fails(monkeypatch):
+    monkeypatch.setattr(catalog, '_public_ipv4', resolution_fails)
+    monkeypatch.setattr(catalog, '_tcp_open', lambda address, port: address == '93.184.216.34')
+    pinned, address, port = catalog.pin_endpoint(NODE, known_address='93.184.216.34')
+    assert (address, port) == ('93.184.216.34', 443)
+    assert pinned['server'] == '93.184.216.34' and pinned['sni'] == 'node.example'
+
+
+@pytest.mark.parametrize('known', [None, '198.18.0.28', '10.0.0.8'])
+def test_pin_endpoint_keeps_resolution_error_without_usable_known_address(monkeypatch, known):
+    monkeypatch.setattr(catalog, '_public_ipv4', resolution_fails)
+    monkeypatch.setattr(catalog, '_tcp_open', lambda *_args: True)
+    with pytest.raises(catalog.CatalogError, match='无法解析'):
+        catalog.pin_endpoint(NODE, known_address=known)
+
+
+def test_pin_endpoint_rejects_known_address_that_no_longer_connects(monkeypatch):
+    monkeypatch.setattr(catalog, '_public_ipv4', resolution_fails)
+    monkeypatch.setattr(catalog, '_tcp_open', lambda *_args: False)
+    with pytest.raises(catalog.CatalogError, match='端口目前连不上'):
+        catalog.pin_endpoint(NODE, known_address='93.184.216.34')
+
+
+@pytest.fixture
+def bound_node(isolated, monkeypatch):
+    node = dict(NODE)
+    monkeypatch.setattr(cbc, 'selection_map', lambda: {'ifixture': {'subscription_id': 'sub', 'node_id': 'n1'}})
+    monkeypatch.setattr(store, 'materialize_node', lambda _sub, _node: dict(node))
+    monkeypatch.setattr(catalog, '_tcp_open', lambda *_args: True)
+    return node, isolated / 'configs' / 'ifixture' / 'runtime' / 'endpoint.json'
+
+
+def test_node_upstream_remembers_and_reuses_last_pinned_address(bound_node, monkeypatch):
+    _node, cache = bound_node
+    monkeypatch.setattr(catalog, '_public_ipv4', lambda *_args: ['93.184.216.34'])
+    assert cbc.node_upstream('ifixture')['upstream'] == ['93.184.216.34']
+    assert json.loads(cache.read_text()) == {'server': 'node.example', 'port': 443, 'address': '93.184.216.34'}
+    assert cache.stat().st_mode & 0o777 == 0o600
+    monkeypatch.setattr(catalog, '_public_ipv4', resolution_fails)
+    assert cbc.node_upstream('ifixture')['upstream'] == ['93.184.216.34']
+
+
+@pytest.mark.parametrize('change', [{'server': 'other.example'}, {'port': 8443}])
+def test_node_upstream_ignores_address_remembered_for_another_endpoint(bound_node, monkeypatch, change):
+    node, _cache = bound_node
+    monkeypatch.setattr(catalog, '_public_ipv4', lambda *_args: ['93.184.216.34'])
+    cbc.node_upstream('ifixture')
+    node.update(change)
+    monkeypatch.setattr(catalog, '_public_ipv4', resolution_fails)
+    with pytest.raises(catalog.CatalogError, match='无法解析'):
+        cbc.node_upstream('ifixture')
+
+
+def test_node_upstream_ignores_damaged_cache(bound_node, monkeypatch):
+    _node, cache = bound_node
+    cache.parent.mkdir(parents=True)
+    cache.write_text('{broken')
+    monkeypatch.setattr(catalog, '_public_ipv4', resolution_fails)
+    with pytest.raises(catalog.CatalogError, match='无法解析'):
+        cbc.node_upstream('ifixture')
+
+
+def test_failed_recovery_records_the_redacted_reason(exit_check, monkeypatch):
+    monkeypatch.setattr(core, 'runtime_snapshot', lambda force=False: snapshot())
+    monkeypatch.setattr(core, '_preflight_boot', lambda slug: None)
+    monkeypatch.setattr(cbc, 'running_browser_identity', lambda slug: {'image': 'image', 'revision': 'revision'})
+
+    def prepare_fails(*_args, **_kwargs):
+        raise catalog.CatalogError('节点服务器“node.example”无法解析出公网 IPv4。 password=fixture')
+
+    monkeypatch.setattr(cbc, 'prepare', prepare_fails)
+    with pytest.raises(RuntimeError) as raised:
+        core._dispatch(task('recover', generation='generation'))
+    detail = store.instance_by_id('ifixture')['raw']['recovery']['detail']
+    assert detail == str(raised.value)
+    assert detail.startswith('第 1/3 次恢复未成功（节点服务器“node.example”无法解析出公网 IPv4。')
+    assert 'fixture' not in detail

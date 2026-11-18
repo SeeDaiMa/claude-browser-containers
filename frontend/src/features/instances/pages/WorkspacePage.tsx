@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useManager } from '../../../app/ManagerProvider'
@@ -34,20 +34,47 @@ import { ExitHistory } from '../components/ExitHistory'
 const MIN_BROWSER_VIEWPORT = { width: 500, height: 144 }
 const STOP_CONFIRMATIONS = 3
 
-function useWorkspaceFrame(id: string) {
+function useWorkspaceFrame(id: string, stopTaskId?: string, stopTaskState?: string) {
   const { subscribeOverview } = useManager()
   const [frame, setFrame] = useState({ id, visible: false })
+  const visible = useRef(false)
+  // 停止任务成功后已主动卸载；在看到“已停止”之前，迟到的“运行中”概览不能把画面带回来。
+  const closedByStop = useRef(false)
+  const seenStopTask = useRef<{ instanceId: string; taskId: string; state: string } | null>(null)
+  const update = useCallback(
+    (next: boolean) => {
+      if (visible.current === next) return
+      visible.current = next
+      setFrame({ id, visible: next })
+    },
+    [id],
+  )
+
+  useEffect(() => {
+    // 用户自己停止时已确定实例不再运行，不必再等三次轮询确认。
+    const previous = seenStopTask.current
+    seenStopTask.current =
+      stopTaskId && stopTaskState
+        ? { instanceId: id, taskId: stopTaskId, state: stopTaskState }
+        : null
+    if (
+      previous?.instanceId === id &&
+      previous.taskId === stopTaskId &&
+      previous.state !== 'succeeded' &&
+      stopTaskState === 'succeeded'
+    ) {
+      closedByStop.current = true
+      update(false)
+    }
+  }, [id, stopTaskId, stopTaskState, update])
+
   useEffect(() => {
     let stopped = 0
-    let visible = false
+    visible.current = false
+    closedByStop.current = false
     setFrame((current) =>
       current.id === id && !current.visible ? current : { id, visible: false },
     )
-    const update = (next: boolean) => {
-      if (visible === next) return
-      visible = next
-      setFrame({ id, visible: next })
-    }
     return subscribeOverview((snapshot) => {
       if (!snapshot) {
         stopped = 0
@@ -64,14 +91,15 @@ function useWorkspaceFrame(id: string) {
         return
       }
       if (item.runtime === 'stopped') {
+        closedByStop.current = false
         stopped += 1
         if (stopped >= STOP_CONFIRMATIONS) update(false)
       } else {
         stopped = 0
-        update(true)
+        if (!closedByStop.current) update(true)
       }
     })
-  }, [id, subscribeOverview])
+  }, [id, subscribeOverview, update])
   return frame.id === id && frame.visible
 }
 
@@ -100,7 +128,10 @@ export function WorkspacePage() {
   const infoButton = useRef<HTMLButtonElement>(null)
   const ipHistory = useRef<HTMLElement>(null)
   const connected = !!data?.docker.ok && !error
-  const showFrame = useWorkspaceFrame(id)
+  const stopTask = tasks.find(
+    (task) => task.instance_id === id && ['stop', 'trash', 'purge'].includes(task.kind),
+  )
+  const showFrame = useWorkspaceFrame(id, stopTask?.id, stopTask?.state)
   const frameTask = tasks.find(
     (task) => task.instance_id === id && ['start', 'restart'].includes(task.kind),
   )
